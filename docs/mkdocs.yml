@@ -1,0 +1,75 @@
+site_name: botminter
+site_description: CLI for managing GitOps-style agentic teams
+docs_dir: content
+site_dir: site
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/index.md
+  - The Agentic Workflow: workflow.md
+  - Concepts:
+    - Architecture: concepts/architecture.md
+    - Workspace Model: concepts/workspace-model.md
+    - Knowledge & Invariants: concepts/knowledge-invariants.md
+    - Coordination Model: concepts/coordination-model.md
+    - Profiles: concepts/profiles.md
+  - How-To Guides:
+    - Generate a Team Repo: how-to/generate-team-repo.md
+    - Manage Members: how-to/manage-members.md
+    - Launch Members: how-to/launch-members.md
+    - Manage Knowledge: how-to/manage-knowledge.md
+  - Reference:
+    - CLI Commands: reference/cli.md
+    - Daemon Operations: reference/daemon-operations.md
+    - Process Conventions: reference/process.md
+    - Configuration Files: reference/configuration.md
+    - Member Roles: reference/member-roles.md
+    - Design Principles: reference/design-principles.md
+  - Roadmap: roadmap.md
+theme:
+  name: material
+  custom_dir: overrides
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+
+extra_css:
+  - stylesheets/home.css
+
+extra_javascript:
+  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
+  - js/mermaid-init.js

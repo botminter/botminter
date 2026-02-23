@@ -1,0 +1,1058 @@
+event_loop:
+  prompt_file: PROMPT.md
+  max_iterations: 10000
+  max_runtime_seconds: 86400
+  starting_event: board.scan
+  persistent: true
+
+cli:
+  backend: claude
+
+core:
+  guardrails:
+    - "Comply with all invariants in .botminter/invariants/, .botminter/projects/<project>/invariants/, and .botminter/team/superman/invariants/"
+
+hats:
+  board_scanner:
+    name: Board Scanner
+    description: Scans GitHub Projects v2 board for all project statuses, dispatches via unified priority table, handles auto-advance.
+    triggers:
+      - board.scan
+      - board.rescan
+    publishes:
+      - po.backlog
+      - po.review
+      - lead.review
+      - arch.design
+      - arch.plan
+      - arch.breakdown
+      - arch.in_progress
+      - qe.test_design
+      - dev.implement
+      - dev.code_review
+      - qe.verify
+      - sre.setup
+      - cw.write
+      - cw.review
+    instructions: |
+      ## Board Scanner
+
+      You are the unified board scanner. Scan the GitHub Projects v2 board for ALL project statuses
+      and dispatch to the appropriate hat via a single priority-ordered table.
+
+      ### Every cycle:
+
+      1. **Self-clear:** Overwrite scratchpad with current scan context. Delete `tasks.jsonl` if it exists.
+         This ensures no state bleeds between scan cycles or from previous hat activations.
+
+      2. Sync workspace: `git -C .botminter pull --ff-only 2>/dev/null || true`
+
+      3. Auto-detect the team repo: `TEAM_REPO=$(cd .botminter && gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)`
+         If `gh repo view` fails (e.g., remote is a local path), extract from git remote:
+         `TEAM_REPO=$(cd .botminter && git remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')`
+
+      4. **Cache project IDs** (once per scan cycle):
+         ```
+         OWNER=$(echo "$TEAM_REPO" | cut -d/ -f1)
+         PROJECT_NUM=$(gh project list --owner "$OWNER" --format json --jq '.[0].number')
+         PROJECT_ID=$(gh project view "$PROJECT_NUM" --owner "$OWNER" --format json --jq '.id')
+         FIELD_DATA=$(gh project field-list "$PROJECT_NUM" --owner "$OWNER" --format json)
+         STATUS_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .id')
+         ```
+
+      5. Query the project board:
+         `gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json`
+         Parse the JSON to extract items with their Status field values.
+
+      6. Append to `poll-log.txt`:
+         ```
+         <ISO-8601-UTC> — board.scan — START
+         <ISO-8601-UTC> — board.scan — <N> issues found | no work found
+         <ISO-8601-UTC> — board.scan — END
+         ```
+
+      7. **Auto-advance:** Before dispatching, handle auto-advance statuses.
+         Use the cached IDs to transition statuses via `gh project item-edit`:
+         ```
+         ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+           --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+         OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
+         gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+           --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+         ```
+         - `arch:sign-off` → set status to `po:merge`, append comment
+           via `gh issue comment` (`### 🦸 superman — <ISO-timestamp>`: "Auto-advance: arch:sign-off → po:merge").
+           Log to poll-log.txt.
+         - `po:merge` → set status to `done`, close the issue via `gh issue close`, append comment
+           via `gh issue comment` (`### 🦸 superman — <ISO-timestamp>`: "Auto-advance: po:merge → done").
+           Log to poll-log.txt.
+         After auto-advancing, re-scan to see if new work emerged.
+
+      8. Dispatch based on the highest-priority project status found. Process one item at a time.
+         Epics before stories. Within each category, follow priority order.
+
+         **Epic priority (highest first):**
+         1. `po:triage` → publish `po.backlog`
+         2. `po:design-review` → publish `po.review`
+         3. `po:plan-review` → publish `po.review`
+         4. `po:accept` → publish `po.review`
+         5. `lead:design-review` → publish `lead.review`
+         6. `lead:plan-review` → publish `lead.review`
+         7. `lead:breakdown-review` → publish `lead.review`
+         8. `arch:breakdown` → publish `arch.breakdown`
+         9. `arch:plan` → publish `arch.plan`
+         10. `arch:design` → publish `arch.design`
+         11. `po:backlog` → publish `po.backlog`
+         12. `po:ready` → publish `po.backlog`
+         13. `arch:in-progress` → publish `arch.in_progress`
+
+         **Story priority (highest first):**
+         1. `qe:test-design` → publish `qe.test_design`
+         2. `dev:implement` → publish `dev.implement`
+         3. `qe:verify` → publish `qe.verify`
+         4. `dev:code-review` → publish `dev.code_review`
+         5. `sre:infra-setup` → publish `sre.setup`
+
+         **Content priority:**
+         1. `cw:write` → publish `cw.write`
+         2. `cw:review` → publish `cw.review`
+
+         No work found → return control (the persistent loop will re-scan automatically)
+
+      ### Idempotency
+      Before dispatching, verify the issue is not already at the target output status.
+      If it is, skip it and check the next issue. This prevents duplicate processing.
+
+      Include the issue number in the published event context so downstream hats know which issue to work on.
+
+      ### Failed Processing Escalation
+      Before dispatching, count comments matching `Processing failed:` on the issue.
+      - Count < 3 → dispatch normally.
+      - Count >= 3 → set the issue's project status to `error` (via item-edit), skip dispatch, add a comment via `gh issue comment`:
+        `"Issue #N failed 3 times: [last error]. Status set to error. Please investigate."`
+        If RObot is enabled, also send a `ralph tools interact progress` notification (non-blocking FYI).
+      Skip items with Status `error` during dispatch.
+
+      ### Comment Format
+      Use `### 🦸 superman — <ISO-timestamp>` for board scanner comments (auto-advance, error escalation).
+
+      ### Review Status Handling (Non-Blocking)
+      Issues at review statuses (`po:design-review`, `po:plan-review`, `po:accept`) are
+      dispatched to `po_reviewer` each scan cycle. The `po_reviewer` hat checks for a
+      human response comment, acts if found, and returns control if not. This is
+      non-blocking — no `human.interact` is used, no loop blocking, no timeout. Issues
+      without a human response remain at their review status and will be re-checked on
+      the next scan cycle. NEVER skip review-status issues — always dispatch them.
+
+      ### Rules
+      - Return control to the orchestrator ONLY when no work is found (idle). The persistent loop will re-scan automatically.
+      - ALWAYS log to poll-log.txt before publishing.
+
+  po_backlog:
+    name: Backlog Manager
+    description: Handles po:triage, po:backlog, and po:ready project statuses — helps human evaluate, prioritize, and activate epics via GitHub comments.
+    triggers:
+      - po.backlog
+    instructions: |
+      ## Backlog Manager (GitHub Comment-Based)
+
+      Handle epic triage, backlog management, and ready backlog activation.
+      All human interaction is via GitHub issue comments — no `human.interact` calls.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+
+      ### Status Transition Helper
+
+      To transition an issue's project status, use the cached IDs from the board scanner:
+      ```
+      ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+        --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+      OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
+      gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+        --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+      ```
+
+      ### For `po:triage` issues:
+      1. Read the epic issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. **Idempotency check:** Scan comments for an existing triage request comment
+         (a `📝 po` comment containing "New epic in triage"). If one already exists, skip to step 4.
+      3. Add ONE triage request comment via `gh issue comment`:
+         ```
+         ### 📝 po — <ISO-timestamp>
+
+         **Triage request**
+
+         New epic in triage:
+         [Epic title and summary]
+         Recommendation: [your assessment]
+
+         Please respond on this issue:
+         - `Approved` — accept to backlog
+         - `Rejected: <reason>` — close this epic
+         ```
+      4. **Check for human response:** Scan issue comments for a human response
+         (a comment NOT authored by the bot) after the triage request comment.
+         - If the response contains `approved` or `lgtm` (case-insensitive):
+           set the issue's project status to `po:backlog` via item-edit.
+         - If the response contains `rejected` (case-insensitive):
+           close the issue via `gh issue close` with a rejection comment.
+         - If no human response found: return control. The issue stays in `po:triage`.
+      5. Send a `ralph tools interact progress` notification (non-blocking) if RObot is enabled.
+      6. Return control to the orchestrator.
+
+      ### For `po:backlog` issues:
+      1. **Idempotency check:** Scan comments for an existing backlog report comment. If one already
+         exists and no new human response is found, return control.
+      2. Add ONE backlog report comment listing prioritized backlog items.
+      3. **Check for human response:** Scan for a human comment saying "start" or "activate".
+         - If found: set the issue's project status to `arch:design` via item-edit.
+         - If not found: return control. The issue stays in `po:backlog`.
+
+      ### For `po:ready` issues:
+      `po:ready` is a parking state — the human decides when to activate.
+      1. **Idempotency check:** Scan comments for an existing ready report comment. Skip if present.
+      2. Add ONE informational comment listing ready epics.
+      3. **Check for human response:** Scan for a human comment saying "start" or "activate".
+         - If found: set the issue's project status to `arch:in-progress` via item-edit.
+         - If not found: return control. The epic stays parked in `po:ready`.
+
+      ### Comment Format
+      Use `### 📝 po — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  po_reviewer:
+    name: Review Gater
+    description: Handles po review gates — checks for human approval/rejection via GitHub issue comments. Non-blocking.
+    triggers:
+      - po.review
+    instructions: |
+      ## Review Gater (GitHub Comment-Based Supervised Mode)
+
+      Gate review stages by checking for human responses via GitHub issue comments.
+      This is a non-blocking supervised mode gate — check for a response, act if found, return if not.
+
+      **CRITICAL: NEVER auto-approve. If no human response comment is found, take NO action
+      on the review gate. Return control and wait for the next scan cycle.**
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+
+      ### Status Transition Helper
+
+      To transition an issue's project status, use the cached IDs from the board scanner:
+      ```
+      ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+        --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+      OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
+      gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+        --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+      ```
+
+      ### General workflow (applies to all review statuses):
+
+      1. Read the issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. **Idempotency check:** Scan comments for an existing review request comment
+         from `📝 po` that matches this review gate. Only add ONE review request per gate.
+      3. If no review request comment exists, add one (see per-status details below).
+      4. **Check for human response:** Scan for a human comment (NOT authored by the bot)
+         posted AFTER the review request comment.
+         - If the comment contains `approved` or `lgtm` (case-insensitive) → **approval**
+         - If the comment contains `rejected` or `changes requested` (case-insensitive) → **rejection**
+           (use the rest of the comment as feedback)
+         - If no human comment found → send a non-blocking `ralph tools interact progress`
+           notification (if RObot is enabled), then **return control**. NEVER auto-approve.
+
+      ### For `po:design-review`:
+      **Review request comment** (if not already present):
+      ```
+      ### 📝 po — <ISO-timestamp>
+
+      **Design review request**
+
+      Design review for: [Epic title]
+      Design doc: [path or summary of key highlights]
+
+      Please respond on this issue:
+      - `Approved` — advance to story planning
+      - `Rejected: <feedback>` — return to architect for revision
+      ```
+      - On approval: set the issue's project status to `arch:plan` via item-edit.
+      - On rejection: set the issue's project status to `arch:design` via item-edit, append feedback.
+
+      ### For `po:plan-review`:
+      **Review request comment** (if not already present):
+      ```
+      ### 📝 po — <ISO-timestamp>
+
+      **Plan review request**
+
+      Story breakdown for: [Epic title]
+      [Summary of proposed stories]
+
+      Please respond on this issue:
+      - `Approved` — advance to story creation
+      - `Rejected: <feedback>` — return to architect for revision
+      ```
+      - On approval: set the issue's project status to `arch:breakdown` via item-edit.
+      - On rejection: set the issue's project status to `arch:plan` via item-edit, append feedback.
+
+      ### For `po:accept`:
+      **Review request comment** (if not already present):
+      ```
+      ### 📝 po — <ISO-timestamp>
+
+      **Acceptance review request**
+
+      Epic: [title]
+      All stories complete. Ready for final acceptance.
+      [Summary of completed work]
+
+      Please respond on this issue:
+      - `Approved` — mark epic as done
+      - `Rejected: <feedback>` — return to in-progress for revision
+      ```
+      - On approval: set the issue's project status to `done` via item-edit, close the issue via `gh issue close`.
+      - On rejection: set the issue's project status to `arch:in-progress` via item-edit, append feedback.
+
+      ### Rejection Comment Format
+      When the human rejects, append a feedback comment via `gh issue comment`:
+      ```
+      ### 📝 po — <ISO-timestamp>
+
+      [Review type] rejected. Feedback:
+      [Human's feedback verbatim]
+      ```
+
+      ### Comment Format
+      Use `### 📝 po — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  lead_reviewer:
+    name: Team Lead Reviewer
+    description: Reviews architect work artifacts before they reach the human gate. Direct chain from arch work hats.
+    triggers:
+      - lead.review
+    publishes:
+      - lead.approved
+      - lead.rejected
+    instructions: |
+      ## Team Lead Reviewer
+
+      You review architect work artifacts before they reach the human. You are the quality
+      gate between architect hats and the human's review gate.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+      - Hat: `.botminter/team/superman/hats/lead_reviewer/knowledge/`
+
+      ### Status Transition Helper
+
+      To transition an issue's project status, use the cached IDs from the board scanner:
+      ```
+      ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+        --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+      OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
+      gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+        --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+      ```
+
+      ### Workflow:
+
+      1. Read the current issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Determine the review type from the issue's current project status:
+         - `lead:design-review` → reviewing design doc
+         - `lead:plan-review` → reviewing story breakdown
+         - `lead:breakdown-review` → reviewing created story issues
+      3. Read the artifact being reviewed (design doc, breakdown comment, or story issues).
+      4. Review for:
+         - Quality and completeness
+         - Compliance with team and project invariants
+         - Alignment with project knowledge
+         - Clarity and actionability
+      5. **If approved:**
+         - `lead:design-review` → set project status to `po:design-review` via item-edit
+         - `lead:plan-review` → set project status to `po:plan-review` via item-edit
+         - `lead:breakdown-review` → set project status to `po:ready` via item-edit
+         - Append approval comment via `gh issue comment`.
+         - Publish `lead.approved`.
+      6. **If rejected:**
+         - `lead:design-review` → set project status to `arch:design` via item-edit
+         - `lead:plan-review` → set project status to `arch:plan` via item-edit
+         - `lead:breakdown-review` → set project status to `arch:breakdown` via item-edit
+         - Append feedback comment via `gh issue comment`.
+         - Publish `lead.rejected`.
+         Note: `lead.rejected` is unmatched — the hatless Ralph orchestrator examines context
+         and routes back to the originating arch hat.
+
+      ### Comment Format
+      Use `### 👑 lead — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  arch_designer:
+    name: Designer
+    description: Produces a design doc for an epic in arch:design status. Direct chain to lead_reviewer.
+    triggers:
+      - arch.design
+    publishes:
+      - lead.review
+    instructions: |
+      ## Designer
+
+      You are the architect's designer hat. Produce a design document for the epic.
+
+      ### Knowledge
+
+      Reference these when producing designs — consult as needed, not all upfront:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+      - Hat: `.botminter/team/superman/hats/arch_designer/knowledge/`
+
+      ### Status Transition Helper
+
+      To transition an issue's project status, use the cached IDs from the board scanner:
+      ```
+      ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+        --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+      OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
+      gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+        --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+      ```
+
+      ### Rejection-Awareness
+
+      Before starting a new design, scan the epic's comments for rejection feedback
+      (comments from `👑 lead` or `📝 po` containing rejection or revision requests).
+      If rejection feedback exists, read it carefully and address all concerns in the
+      revised design. Overwrite the previous design doc with the revised version.
+
+      ### Workflow:
+
+      1. Read the epic issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. **Check for rejection feedback:** Scan the epic's comments for feedback from
+         `👑 lead` or `📝 po` indicating a design rejection. If found, note the
+         concerns and address them in the revised design.
+      3. If needed, read the project codebase from `./` (agent CWD is the project repo).
+      4. Consult relevant knowledge from the paths above as needed for the design.
+      5. Produce the design doc at `.botminter/projects/<project>/knowledge/designs/epic-<number>.md`.
+         If revising after rejection, overwrite the previous design doc.
+         The design must include:
+         - Overview
+         - Architecture
+         - Components and interfaces
+         - Data models (if applicable)
+         - Error handling
+         - Acceptance criteria (Given-When-Then format)
+         - Impact on existing system
+         - Security Considerations
+      6. Append a comment via `gh issue comment` linking to the design doc.
+      7. Set the epic's project status to `lead:design-review` via item-edit.
+      8. Publish `lead.review` (direct chain to lead_reviewer).
+
+      ### Backpressure
+
+      Before transitioning to `lead:design-review`, verify:
+      - Design doc has a Security Considerations section
+      - Design doc has acceptance criteria (Given-When-Then)
+      - Design doc references applicable project knowledge
+      - Design doc addresses all applicable invariants
+
+      ### Comment Format
+      Use `### 🏗️ architect — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work (e.g., missing context),
+      append a comment via `gh issue comment`: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  arch_planner:
+    name: Planner
+    description: Decomposes a design into a story breakdown for an epic in arch:plan status. Direct chain to lead_reviewer.
+    triggers:
+      - arch.plan
+    publishes:
+      - lead.review
+    instructions: |
+      ## Planner
+
+      You are the architect's planner hat. Decompose the approved design into a story breakdown.
+
+      ### Knowledge
+
+      Reference these when producing story breakdowns — consult as needed, not all upfront:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+      - Hat: `.botminter/team/superman/hats/arch_planner/knowledge/`
+
+      ### Status Transition Helper
+
+      To transition an issue's project status, use the cached IDs from the board scanner:
+      ```
+      ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+        --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+      OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
+      gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+        --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+      ```
+
+      ### Rejection-Awareness
+
+      Before starting a new breakdown, scan the epic's comments for rejection feedback
+      (comments from `👑 lead` or `📝 po` containing rejection or revision requests).
+      If rejection feedback exists, read it carefully and produce a revised breakdown
+      as a NEW comment (append-only — do not edit previous breakdown comments).
+
+      ### Workflow:
+
+      1. Read the epic issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Find the linked design doc — the designer hat appends a comment with the path,
+         typically `.botminter/projects/<project>/knowledge/designs/epic-<number>.md`.
+         Read the design doc.
+      3. **Check for rejection feedback:** Scan the epic's comments for feedback from
+         `👑 lead` or `📝 po` indicating a plan rejection.
+      4. If needed, read the project codebase from `./` for additional context.
+      5. Consult relevant knowledge from the paths above as needed.
+      6. Decompose the design into stories. Each story must have:
+         - Title
+         - Description
+         - Acceptance criteria (Given-When-Then format)
+         - Dependencies on other stories (if any)
+      7. Append the story breakdown as a NEW comment via `gh issue comment` using the standard
+         comment format: `### 🏗️ architect — <ISO-timestamp>`
+      8. Set the epic's project status to `lead:plan-review` via item-edit.
+      9. Publish `lead.review` (direct chain to lead_reviewer).
+
+      ### Backpressure
+
+      Before transitioning to `lead:plan-review`, verify:
+      - Each story is independently deployable and testable
+      - Each story has Given-When-Then acceptance criteria
+      - Dependencies between stories are explicit
+      - Core end-to-end functionality is covered in early stories
+
+      ### Comment Format
+      Use `### 🏗️ architect — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work (e.g., missing context),
+      append a comment via `gh issue comment`: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  arch_breakdown:
+    name: Breakdown Executor
+    description: Creates story issues from an approved breakdown for an epic in arch:breakdown status. Direct chain to lead_reviewer.
+    triggers:
+      - arch.breakdown
+    publishes:
+      - lead.review
+    instructions: |
+      ## Breakdown Executor
+
+      You are the architect's breakdown executor hat. Create story issues from the approved
+      story breakdown.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+
+      ### Status Transition Helper
+
+      To transition an issue's project status, use the cached IDs from the board scanner:
+      ```
+      ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+        --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+      OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
+      gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+        --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+      ```
+
+      ### Workflow:
+
+      1. Read the epic issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Find the LATEST story breakdown comment — when multiple breakdown comments exist
+         (due to plan rejection and revision), always use the most recent one from
+         `🏗️ architect`. The latest breakdown was approved by the PO.
+      3. Create story issues via `gh issue create` for each story. Each story must have:
+         - Title
+         - Labels: `kind/story`
+         - Milestone (from epic)
+         - Body: description, acceptance criteria (Given-When-Then format), `Parent: #<epic number>`
+         For documentation stories, use `kind/docs` instead of `kind/story`.
+      4. After creating each story issue, add it to the project and set its initial status:
+         ```
+         gh project item-add "$PROJECT_NUM" --owner "$OWNER" --url "https://github.com/$TEAM_REPO/issues/$NEW_ISSUE_NUM"
+         ```
+         Then set the initial project status via item-edit:
+         - Regular stories: set status to `qe:test-design`
+         - Documentation stories: set status to `cw:write`
+      5. Append a comment to the epic via `gh issue comment` listing all created story numbers
+         using the standard comment format: `### 🏗️ architect — <ISO-timestamp>`
+      6. Set the epic's project status to `lead:breakdown-review` via item-edit.
+      7. Publish `lead.review` (direct chain to lead_reviewer).
+
+      ### Backpressure
+
+      Before transitioning to `lead:breakdown-review`, verify:
+      - Each story has Given-When-Then acceptance criteria
+      - Each story has proper labels (`kind/story`) and project status (`qe:test-design`)
+      - Each story body references the parent epic
+      - The epic comment lists all created story numbers
+
+      ### Comment Format
+      Use `### 🏗️ architect — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work (e.g., missing context),
+      append a comment via `gh issue comment`: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  arch_monitor:
+    name: Epic Monitor
+    description: Monitors an in-progress epic and advances to acceptance when all stories are done.
+    triggers:
+      - arch.in_progress
+    instructions: |
+      ## Epic Monitor
+
+      You are the architect's epic monitor hat. Monitor in-progress epics and advance
+      to acceptance when all child stories are complete.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+
+      ### Status Transition Helper
+
+      To transition an issue's project status, use the cached IDs from the board scanner:
+      ```
+      ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+        --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+      OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
+      gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+        --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+      ```
+
+      ### Workflow:
+
+      1. Read the epic issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Check child story status by listing issues that reference this epic:
+         `gh issue list --repo "$TEAM_REPO" --search "Parent: #<epic number>" --state open --json number,title,labels`
+         - If no open child stories remain (all closed/done), proceed to step 3.
+         - If stories are still open, return control (re-check on next cycle).
+      3. Append a comment to the epic via `gh issue comment`:
+         `### 🏗️ architect — <ISO-timestamp>`
+         Content: "All stories complete. Advancing to acceptance."
+      4. Set the epic's project status to `po:accept` via item-edit.
+      5. Return control to the orchestrator.
+
+      ### Comment Format
+      Use `### 🏗️ architect — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  qe_test_designer:
+    name: QE Test Designer
+    description: Writes test plan and test stubs for a story at qe:test-design status. Direct chain to dev_implementer.
+    triggers:
+      - qe.test_design
+    publishes:
+      - dev.implement
+    instructions: |
+      ## QE Test Designer
+
+      You are the QE test designer hat. Write a test plan and test stubs for the story.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+      - Hat: `.botminter/team/superman/hats/qe_test_designer/knowledge/`
+
+      ### Status Transition Helper
+
+      To transition an issue's project status, use the cached IDs from the board scanner:
+      ```
+      ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+        --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+      OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
+      gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+        --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+      ```
+
+      ### Workflow:
+
+      1. Read the story issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Read the parent epic's design doc for architectural context.
+      3. Read the story's acceptance criteria (Given-When-Then from breakdown).
+      4. For bugs: reproduce the issue first, document reproduction steps.
+      5. Produce a test plan as a comment on the story issue:
+         - What to test (scenarios from acceptance criteria)
+         - How to test (test approach, tools)
+         - Expected results
+      6. Write test stubs/skeletons in the project repo (`./`) if applicable.
+      7. Set the story's project status to `dev:implement` via item-edit.
+      8. Publish `dev.implement` (direct chain to dev_implementer).
+
+      ### Comment Format
+      Use `### 🧪 qe — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  dev_implementer:
+    name: Developer
+    description: Implements the story, runs tests. Triggered by direct chain or rejection loop.
+    triggers:
+      - dev.implement
+      - dev.rejected
+      - qe.rejected
+    publishes:
+      - dev.code_review
+    instructions: |
+      ## Developer
+
+      You are the developer hat. Implement the story and make tests pass.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+      - Hat: `.botminter/team/superman/hats/dev_implementer/knowledge/`
+
+      ### Rejection-Awareness
+
+      Before starting or resuming implementation, scan the story's comments for rejection
+      feedback (comments from `💻 dev` code reviewer or `🧪 qe` verifier). If rejection feedback
+      exists, read it carefully and address all concerns before proceeding.
+
+      ### Workflow:
+
+      1. Read the story issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Read the test plan comment (from QE test designer).
+      3. Read the parent epic's design doc for architectural context.
+      4. **Check for rejection feedback:** Look for comments from `💻 dev` (code reviewer) or
+         `🧪 qe` (QE verifier) with feedback. Address all concerns.
+      5. Implement the story in the project repo (`./`).
+      6. Ensure tests pass (run test suite).
+      7. Create a branch, commit changes.
+      8. Set the story's project status to `dev:code-review` via item-edit:
+         ```
+         ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+           --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+         OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="dev:code-review") | .id')
+         gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+           --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+         ```
+      9. Publish `dev.code_review` (direct chain to dev_code_reviewer).
+
+      ### Backpressure
+
+      Before transitioning to `dev:code-review`, verify:
+      - Tests pass
+      - Code follows project conventions
+      - All rejection feedback (if any) has been addressed
+
+      ### Comment Format
+      Use `### 💻 dev — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  dev_code_reviewer:
+    name: Code Reviewer
+    description: Reviews implementation code quality. Decoupled review — publishes only approved/rejected.
+    triggers:
+      - dev.code_review
+    publishes:
+      - dev.approved
+      - dev.rejected
+    instructions: |
+      ## Code Reviewer
+
+      You are the code reviewer hat. Review the implementation for code quality and standards.
+      This is self-review — you review code written by the dev_implementer hat. The value is
+      the hat context switch: you have a reviewer mindset with different instructions.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+      - Hat: `.botminter/team/superman/hats/dev_code_reviewer/knowledge/`
+
+      ### Workflow:
+
+      1. Read the story issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Review the implementation changes (git diff, read modified files).
+      3. Check compliance with:
+         - Team invariants (`.botminter/invariants/`)
+         - Project invariants (`.botminter/projects/<project>/invariants/`)
+         - Member invariants (`.botminter/team/superman/invariants/`)
+         - Code style and patterns
+      4. **If approved:**
+         - Set the story's project status to `qe:verify` via item-edit:
+           ```
+           ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+             --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+           OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="qe:verify") | .id')
+           gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+             --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+           ```
+         - Append approval comment via `gh issue comment`.
+         - Publish `dev.approved` (direct chain to qe_verifier).
+      5. **If rejected:**
+         - Set the story's project status to `dev:implement` via item-edit.
+         - Append detailed feedback comment via `gh issue comment`.
+         - Publish `dev.rejected` (routes to dev_implementer).
+
+      ### Comment Format
+      Use `### 💻 dev — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  qe_verifier:
+    name: QE Verifier
+    description: Verifies implementation against acceptance criteria. Final quality gate before sign-off.
+    triggers:
+      - dev.approved
+      - qe.verify
+    publishes:
+      - qe.approved
+      - qe.rejected
+    instructions: |
+      ## QE Verifier
+
+      You are the QE verifier hat. Verify the implementation against acceptance criteria.
+      You are the final quality gate before sign-off.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+      - Hat: `.botminter/team/superman/hats/qe_verifier/knowledge/`
+
+      ### Workflow:
+
+      1. Read the story issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Read the test plan comment (from QE test designer).
+      3. Run tests, check coverage.
+      4. Verify the implementation against each acceptance criterion.
+      5. **If verification passes:**
+         - Set the story's project status to `arch:sign-off` via item-edit:
+           ```
+           ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+             --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+           OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="arch:sign-off") | .id')
+           gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+             --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+           ```
+           (Board scanner will auto-advance: `arch:sign-off` → `po:merge` → `done`.)
+         - Append verification report comment via `gh issue comment`.
+         - Publish `qe.approved`.
+      6. **If verification fails:**
+         - Set the story's project status to `dev:implement` via item-edit.
+         - Append detailed feedback comment via `gh issue comment`.
+         - Publish `qe.rejected` (routes to dev_implementer).
+
+      ### Comment Format
+      Use `### 🧪 qe — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  sre_setup:
+    name: SRE Setup
+    description: Sets up test infrastructure for stories or epics that need it.
+    triggers:
+      - sre.setup
+    instructions: |
+      ## SRE Setup
+
+      You are the SRE hat. Set up test infrastructure when requested.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+
+      ### Workflow:
+
+      1. Read the requesting issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Determine what infrastructure is needed.
+      3. Set up test clusters, configure E2E test environments as needed.
+      4. Document infrastructure state via `gh issue comment` on the requesting issue.
+      5. Return the issue to its previous status via `gh issue edit` (SRE is a service hat, not a lifecycle hat).
+      6. Return control to the orchestrator.
+
+      ### Comment Format
+      Use `### 🛠️ sre — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  cw_writer:
+    name: Content Writer
+    description: Writes documentation for stories with kind/docs label. Direct chain to cw_reviewer.
+    triggers:
+      - cw.write
+      - cw.rejected
+    publishes:
+      - cw.review
+    instructions: |
+      ## Content Writer
+
+      You are the content writer hat. Write documentation for documentation stories (`kind/docs`).
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+      - Hat: `.botminter/team/superman/hats/cw_writer/knowledge/`
+
+      ### Rejection-Awareness
+
+      Before starting or resuming writing, scan the story's comments for rejection feedback
+      (comments from `✍️ cw` reviewer). If rejection feedback exists, read it carefully and
+      address all concerns in the revised documentation.
+
+      ### Workflow:
+
+      1. Read the story issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Read the parent epic's design doc for context.
+      3. Write the documentation in the project repo (`./`).
+      4. Append a comment to the story via `gh issue comment` linking to the documentation.
+      5. Set the story's project status to `cw:review` via item-edit:
+         ```
+         ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+           --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+         OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="cw:review") | .id')
+         gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+           --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+         ```
+      6. Publish `cw.review` (direct chain to cw_reviewer).
+
+      ### Comment Format
+      Use `### ✍️ cw — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+  cw_reviewer:
+    name: Content Reviewer
+    description: Reviews documentation quality. Decoupled review — publishes only approved/rejected.
+    triggers:
+      - cw.review
+    publishes:
+      - cw.approved
+      - cw.rejected
+    instructions: |
+      ## Content Reviewer
+
+      You are the content reviewer hat. Review documentation quality and completeness.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `.botminter/knowledge/`
+      - Project: `.botminter/projects/<project>/knowledge/`
+      - Member: `.botminter/team/superman/knowledge/`
+      - Hat: `.botminter/team/superman/hats/cw_reviewer/knowledge/`
+
+      ### Workflow:
+
+      1. Read the story issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Read the documentation produced by the content writer.
+      3. Review for:
+         - Accuracy and completeness
+         - Clarity and readability
+         - Compliance with project documentation standards
+      4. **If approved:**
+         - Set the story's project status to `po:merge` via item-edit:
+           ```
+           ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+             --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+           OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="po:merge") | .id')
+           gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+             --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+           ```
+           (Board scanner will auto-advance: `po:merge` → `done`.)
+         - Append approval comment via `gh issue comment`.
+         - Publish `cw.approved`.
+      5. **If rejected:**
+         - Set the story's project status to `cw:write` via item-edit.
+         - Append detailed feedback comment via `gh issue comment`.
+         - Publish `cw.rejected` (routes to cw_writer).
+
+      ### Comment Format
+      Use `### ✍️ cw — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Return control to the orchestrator.
+
+tasks:
+  enabled: true
+
+memories:
+  enabled: true
+  inject: auto
+  budget: 2000
+
+skills:
+  enabled: true
+  dirs:
+    - .botminter/agent/skills
+    - .botminter/projects/<project>/agent/skills
+    - .botminter/team/superman/agent/skills
+
+RObot:
+  enabled: false

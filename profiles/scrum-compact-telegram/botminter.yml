@@ -1,0 +1,100 @@
+name: scrum-compact-telegram
+display_name: "Scrum Compact Solo Team (Telegram HIL)"
+description: "Same as scrum-compact but uses Telegram (RObot) for blocking human-in-the-loop approval gates."
+version: "1.0.0"
+schema_version: '1.0'
+
+roles:
+  - name: superman
+    description: "All-in-one member — PO, architect, dev, QE, SRE, content writer"
+
+labels:
+  # Kind labels (tracked as GitHub labels)
+  - name: "kind/epic"
+    color: "0E8A16"
+    description: "Epic-level work item"
+  - name: "kind/story"
+    color: "1D76DB"
+    description: "Story-level work item"
+  - name: "kind/docs"
+    color: "0075CA"
+    description: "Documentation story, routed to content writer hats"
+
+statuses:
+  # Epic statuses (tracked via GitHub Projects v2 Status field)
+  - name: "po:triage"
+    description: "New epic, awaiting evaluation"
+  - name: "po:backlog"
+    description: "Accepted, prioritized, awaiting activation"
+  - name: "arch:design"
+    description: "Architect producing design doc"
+  - name: "po:design-review"
+    description: "Design doc awaiting human review"
+  - name: "arch:plan"
+    description: "Architect proposing story breakdown"
+  - name: "po:plan-review"
+    description: "Story breakdown awaiting human review"
+  - name: "arch:breakdown"
+    description: "Architect creating story issues"
+  - name: "lead:design-review"
+    description: "Design doc awaiting lead review"
+  - name: "lead:plan-review"
+    description: "Story breakdown awaiting lead review"
+  - name: "lead:breakdown-review"
+    description: "Story issues awaiting lead review"
+  - name: "po:ready"
+    description: "Stories created, epic in ready backlog"
+  - name: "arch:in-progress"
+    description: "Architect monitoring story execution"
+  - name: "po:accept"
+    description: "Epic awaiting human acceptance"
+  - name: "done"
+    description: "Complete"
+
+  # Story statuses
+  - name: "dev:ready"
+    description: "Story ready for development"
+  - name: "qe:test-design"
+    description: "QE designing tests"
+  - name: "dev:implement"
+    description: "Developer implementing"
+  - name: "dev:code-review"
+    description: "Code review"
+  - name: "qe:verify"
+    description: "QE verifying implementation"
+  - name: "arch:sign-off"
+    description: "Architect sign-off (auto-advance)"
+  - name: "po:merge"
+    description: "Merge gate (auto-advance)"
+
+  # Specialist statuses
+  - name: "sre:infra-setup"
+    description: "SRE infrastructure setup"
+  - name: "cw:write"
+    description: "Content writer writing"
+  - name: "cw:review"
+    description: "Content writer reviewing"
+
+  # Error status
+  - name: "error"
+    description: "Issue failed processing 3 times"
+
+views:
+  - name: "PO"
+    prefixes: ["po"]
+    also_include: ["done", "error"]
+  - name: "Architect"
+    prefixes: ["arch"]
+    also_include: ["done", "error"]
+  - name: "Developer"
+    prefixes: ["dev"]
+    also_include: ["done", "error"]
+  - name: "QE"
+    prefixes: ["qe"]
+    also_include: ["done", "error"]
+  - name: "Lead"
+    prefixes: ["lead"]
+    also_include: ["done", "error"]
+  - name: "Specialist"
+    prefixes: ["sre", "cw"]
+    also_include: ["done", "error"]

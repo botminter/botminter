@@ -1,0 +1,13 @@
+pub mod completions;
+pub mod daemon;
+pub mod hire;
+pub mod init;
+pub mod knowledge;
+pub mod members;
+pub mod profiles;
+pub mod projects;
+pub mod roles;
+pub mod start;
+pub mod status;
+pub mod stop;
+pub mod teams;

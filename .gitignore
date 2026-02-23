@@ -1,0 +1,14 @@
+target/
+specs/
+
+# Ralph orchestrator runtime & dev config
+.ralph/
+ralph.yml
+PROMPT.md
+
+# Personal/internal
+
+# Secrets
+*.token
+*.pat
+.claude/

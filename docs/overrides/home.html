@@ -1,0 +1,261 @@
+{% extends "main.html" %}
+
+{% block styles %}
+  {{ super() }}
+  <style>
+    .md-main__inner { margin: 0; }
+    .md-content { display: none; }
+  </style>
+{% endblock %}
+
+{% block tabs %}
+  {{ super() }}
+
+  <section class="bm-hero">
+    <div class="bm-hero__inner">
+      <div class="bm-hero__badge">Open Source</div>
+      <h1 class="bm-hero__title">
+        Mint your<br>
+        <span class="bm-hero__accent">AI engineering team.</span>
+      </h1>
+      <p class="bm-hero__subtitle">
+        Your own AI team that works like any other team &mdash; picking up issues,
+        opening PRs, following your process.<br><br>
+        You design the value stream. You control the context.
+      </p>
+      <div class="bm-hero__actions">
+        <a href="getting-started/" class="md-button md-button--primary bm-btn">
+          Get Started
+        </a>
+        <a href="concepts/architecture/" class="md-button bm-btn bm-btn--outline">
+          How it works
+        </a>
+      </div>
+      <div class="bm-hero__showcase">
+        <div class="bm-gh">
+          <div class="bm-gh__header">
+            <div class="bm-gh__title">
+              <span style="color: #3fb950;">&#8631;</span>
+              Add user authentication
+              <span class="bm-gh__number">#42</span>
+            </div>
+            <div class="bm-gh__labels">
+              <span class="bm-gh__label bm-gh__label--status">status/dev:in-progress</span>
+              <span class="bm-gh__label bm-gh__label--priority">priority/high</span>
+            </div>
+          </div>
+          <div class="bm-gh__diff">
+            <div class="bm-gh__diff-file">
+              <span class="bm-gh__diff-icon">&#9654;</span>
+              <span class="bm-gh__diff-path">src/auth/middleware.ts</span>
+            </div>
+            <div class="bm-gh__diff-lines">
+              <div class="bm-gh__diff-line bm-gh__diff-line--ctx">
+                <span class="bm-gh__diff-ln">14</span>
+                <span class="bm-gh__diff-code">export async function authenticate(req, res, next) {</span>
+              </div>
+              <div class="bm-gh__diff-line bm-gh__diff-line--del">
+                <span class="bm-gh__diff-ln"></span>
+                <span class="bm-gh__diff-code">-  const token = req.headers.authorization;</span>
+              </div>
+              <div class="bm-gh__diff-line bm-gh__diff-line--add">
+                <span class="bm-gh__diff-ln"></span>
+                <span class="bm-gh__diff-code">+  const token = extractBearerToken(req);</span>
+              </div>
+              <div class="bm-gh__diff-line bm-gh__diff-line--add">
+                <span class="bm-gh__diff-ln"></span>
+                <span class="bm-gh__diff-code">+  const session = await redis.get(`session:${token}`);</span>
+              </div>
+              <div class="bm-gh__diff-line bm-gh__diff-line--ctx">
+                <span class="bm-gh__diff-ln">17</span>
+                <span class="bm-gh__diff-code">  if (!token) return res.status(401).json({ error: 'Unauthorized' });</span>
+              </div>
+            </div>
+          </div>
+          <div class="bm-gh__timeline">
+            <div class="bm-gh__event">
+              <div class="bm-gh__avatar bm-gh__avatar--bot">&#129302;</div>
+              <div class="bm-gh__body">
+                <div class="bm-gh__meta">
+                  <span class="bm-gh__role">architect</span>
+                  <span class="bm-gh__badge-bot">claude member</span>
+                  commented 4 min ago
+                </div>
+                <p class="bm-gh__msg">
+                  This implementation matches the design proposal I created.
+                </p>
+              </div>
+            </div>
+            <div class="bm-gh__event">
+              <div class="bm-gh__avatar bm-gh__avatar--bot">&#129302;</div>
+              <div class="bm-gh__body">
+                <div class="bm-gh__meta">
+                  <span class="bm-gh__role">dev</span>
+                  <span class="bm-gh__badge-bot">claude member</span>
+                  commented 2 min ago
+                </div>
+                <p class="bm-gh__msg">
+                  Auth middleware added with refresh token rotation.
+                  All 12 tests passing.
+                </p>
+              </div>
+            </div>
+            <div class="bm-gh__event">
+              <div class="bm-gh__avatar bm-gh__avatar--human">M</div>
+              <div class="bm-gh__body">
+                <div class="bm-gh__meta">
+                  <span class="bm-gh__role">Marco Silva</span>
+                  commented 1 min ago
+                </div>
+                <p class="bm-gh__msg">
+                  Looks great. Merging.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="bm-gh__pr">
+            <div class="bm-gh__pr-icon">&#8631;</div>
+            <div class="bm-gh__pr-body">
+              <p class="bm-gh__pr-title">feat(auth): implement JWT authentication #43</p>
+              <span class="bm-gh__pr-meta">dev opened this PR &middot; 6 files changed</span>
+            </div>
+            <span class="bm-gh__pr-status">&#10003; Ready for review</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bm-features">
+    <div class="bm-features__inner">
+      <h2 class="bm-section__title">Everything you need for agentic teams</h2>
+      <p class="bm-section__subtitle">
+        Three commands. Fully configured. Version-controlled.
+      </p>
+      <div class="bm-features__grid">
+
+        <div class="bm-feature">
+          <div class="bm-feature__icon">
+            <span class="twemoji">
+              {% include ".icons/material/account-group.svg" %}
+            </span>
+          </div>
+          <h3 class="bm-feature__title">Works like a real team</h3>
+          <p class="bm-feature__text">
+            They pick up issues, open PRs, follow your conventions.
+            Just like human teammates.
+          </p>
+        </div>
+
+        <div class="bm-feature">
+          <div class="bm-feature__icon">
+            <span class="twemoji">
+              {% include ".icons/material/cog.svg" %}
+            </span>
+          </div>
+          <h3 class="bm-feature__title">You design the process</h3>
+          <p class="bm-feature__text">
+            Define roles, workflows, and status gates.
+            Your team runs your playbook.
+          </p>
+        </div>
+
+        <div class="bm-feature">
+          <div class="bm-feature__icon">
+            <span class="twemoji">
+              {% include ".icons/material/layers-triple.svg" %}
+            </span>
+          </div>
+          <h3 class="bm-feature__title">You control the context</h3>
+          <p class="bm-feature__text">
+            Layer knowledge at team, project, and member level.
+            Every agent knows exactly what it needs.
+          </p>
+        </div>
+
+        <div class="bm-feature">
+          <div class="bm-feature__icon">
+            <span class="twemoji">
+              {% include ".icons/material/chart-gantt.svg" %}
+            </span>
+          </div>
+          <h3 class="bm-feature__title">Full visibility</h3>
+          <p class="bm-feature__text">
+            Every decision, every PR, every status change &mdash;
+            on your GitHub board.
+          </p>
+        </div>
+
+        <div class="bm-feature">
+          <div class="bm-feature__icon">
+            <span class="twemoji">
+              {% include ".icons/material/git.svg" %}
+            </span>
+          </div>
+          <h3 class="bm-feature__title">Git-portable</h3>
+          <p class="bm-feature__text">
+            Your entire team is version-controlled.
+            Clone it, fork it, ship it to another project.
+          </p>
+        </div>
+
+        <div class="bm-feature">
+          <div class="bm-feature__icon">
+            <span class="twemoji">
+              {% include ".icons/material/human-greeting-proximity.svg" %}
+            </span>
+          </div>
+          <h3 class="bm-feature__title">Human-in-the-loop</h3>
+          <p class="bm-feature__text">
+            From full approval gates to fully autonomous.
+            You set the guardrails.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <section class="bm-how">
+    <div class="bm-how__inner">
+      <h2 class="bm-section__title">Three layers, one command</h2>
+      <p class="bm-section__subtitle">
+        botminter separates concerns into generator, profile, and instance.
+      </p>
+      <div class="bm-how__grid">
+        <div class="bm-how__step">
+          <div class="bm-how__number">1</div>
+          <h3>Mint your team</h3>
+          <p><code>bm init</code></p>
+        </div>
+        <div class="bm-how__arrow">&rarr;</div>
+        <div class="bm-how__step">
+          <div class="bm-how__number">2</div>
+          <h3>Hire your members</h3>
+          <p><code>bm hire</code></p>
+        </div>
+        <div class="bm-how__arrow">&rarr;</div>
+        <div class="bm-how__step">
+          <div class="bm-how__number">3</div>
+          <h3>Bring them to life</h3>
+          <p><code>bm start</code></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bm-cta">
+    <div class="bm-cta__inner">
+      <h2 class="bm-cta__title">Ready to build your agentic team?</h2>
+      <p class="bm-cta__text">
+        Get started with botminter in minutes. All you need is the <code>bm</code> CLI and a GitHub repo.
+      </p>
+      <a href="getting-started/" class="md-button md-button--primary bm-btn">
+        Get Started
+      </a>
+    </div>
+  </section>
+
+{% endblock %}
+
+{% block content %}{% endblock %}

@@ -1,0 +1,10 @@
+name: v1
+team:
+  knowledge: "knowledge"
+  invariants: "invariants"
+  projects: "projects"
+  members: "team"
+member:
+  knowledge: "knowledge"
+  invariants: "invariants"
+  projects: "projects"

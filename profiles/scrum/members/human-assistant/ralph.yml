@@ -1,0 +1,238 @@
+event_loop:
+  prompt_file: PROMPT.md
+  max_iterations: 10000
+  max_runtime_seconds: 86400
+  starting_event: board.scan
+  persistent: true
+
+cli:
+  backend: claude
+
+hats:
+  board_scanner:
+    name: Board Scanner
+    description: Scans GitHub Projects v2 board for po:* statuses, dispatches to appropriate hat.
+    triggers:
+      - board.scan
+      - board.rescan
+    publishes:
+      - po.backlog
+      - po.review
+    instructions: |
+      ## Board Scanner
+
+      You are the human-assistant's board scanner. Scan the project board for work assigned to the PO role.
+
+      ### Every cycle:
+
+      1. **Self-clear:** Overwrite scratchpad with current scan context. Delete `tasks.jsonl` if it exists.
+
+      2. Sync workspace: `git -C .botminter pull --ff-only 2>/dev/null || true`
+
+      3. Auto-detect the team repo: `TEAM_REPO=$(cd .botminter && gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)`
+         If `gh repo view` fails (e.g., remote is a local path), extract from git remote:
+         `TEAM_REPO=$(cd .botminter && git remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')`
+
+      4. **Cache project IDs** (once per scan cycle):
+         ```
+         OWNER=$(echo "$TEAM_REPO" | cut -d/ -f1)
+         PROJECT_NUM=$(gh project list --owner "$OWNER" --format json --jq '.[0].number')
+         PROJECT_ID=$(gh project view "$PROJECT_NUM" --owner "$OWNER" --format json --jq '.id')
+         FIELD_DATA=$(gh project field-list "$PROJECT_NUM" --owner "$OWNER" --format json)
+         STATUS_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .id')
+         ```
+
+      5. Query the project board and filter for `po:*` statuses:
+         `gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json`
+         Parse the JSON to extract items with Status field values starting with `po:`.
+
+      6. Append to `poll-log.txt` (ALWAYS):
+
+            ```
+            <ISO-8601-UTC> — board.scan — START
+            <ISO-8601-UTC> — board.scan — <N> po issues found | no po work found
+            <ISO-8601-UTC> — board.scan — END
+            ```
+
+      7. **If TRAINING MODE is ENABLED** (see PROMPT.md): Report to human via `human.interact`:
+            ```
+            Board scan complete:
+            - [N] po issues found: [list issue numbers and statuses]
+            About to dispatch: [event name] for issue #[number]
+            Confirm?
+            ```
+            Wait for human confirmation before publishing.
+
+      8. Dispatch based on `po:*` project statuses:
+         - `po:triage`, `po:backlog`, or `po:ready` → publish `po.backlog`
+         - `po:design-review`, `po:plan-review`, or `po:accept` → publish `po.review`
+         - No po work → return control (the persistent loop will re-scan automatically)
+
+      ### Idempotency
+      Before dispatching, verify the issue is not already at the target output status.
+      If it is, skip it and check the next issue. Prevents duplicate processing.
+
+      ### Priority
+      If multiple po issues exist, process one at a time. Priority order:
+      `po:triage` > `po:design-review` > `po:plan-review` > `po:accept` > `po:backlog` > `po:ready`
+
+      Include the issue number in the published event context so downstream hats know which issue to work on.
+
+      ### Failed Processing Escalation
+      Before dispatching, count comments matching `Processing failed:` from the human-assistant role on the issue.
+      - Count < 3 → dispatch normally.
+      - Count >= 3 → set the issue's project status to `error` (via item-edit), skip dispatch, notify human via `human.interact`:
+        `"Issue #N failed 3 times: [last error]. Status set to error. Please investigate."`
+      Skip items with Status `error` during dispatch.
+
+      ### Rules
+      - Return control to the orchestrator ONLY when no po work is found (idle). The persistent loop will re-scan automatically.
+      - ALWAYS log to poll-log.txt before publishing.
+
+  backlog_manager:
+    name: Backlog Manager
+    description: Handles po:triage, po:backlog, and po:ready project statuses — helps human evaluate, prioritize, and activate epics.
+    triggers:
+      - po.backlog
+    publishes:
+      - board.rescan
+    default_publishes: board.rescan
+    instructions: |
+      ## Backlog Manager
+
+      Handle epic triage, backlog management, and ready backlog activation.
+
+      ### Status Transition Helper
+
+      To transition an issue's project status, use the cached IDs from the board scanner:
+      ```
+      ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+        --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+      OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
+      gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+        --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+      ```
+
+      ### For `po:triage` issues:
+      1. Read the epic issue via `gh issue view <number> --repo "$TEAM_REPO" --json number,title,body,labels,state,comments`.
+      2. Present a summary to the human via HIL:
+         ```
+         New epic in triage:
+         [Epic title and summary]
+         Recommendation: [your assessment]
+         Accept to backlog, or reject?
+         ```
+      3. On human approval:
+         - Set the issue's project status to `po:backlog` via item-edit.
+      4. On human rejection:
+         - Close the issue with a rejection comment via `gh issue comment` + `gh issue close`.
+      5. On timeout (no response within `timeout_seconds`):
+         - No action. Epic stays in `po:triage`. Will be presented again next cycle.
+
+      ### For `po:backlog` issues:
+      1. Present the prioritized backlog to the human.
+      2. When human says "start this one":
+         - Set the issue's project status to `arch:design` via item-edit.
+      3. Publish `board.rescan`.
+
+      ### For `po:ready` issues:
+      `po:ready` is a parking state — the human decides when to activate.
+      1. Report ready epics to the human (informational, not a gate):
+         ```
+         Ready backlog:
+         - Epic #[N]: [title] — [M] stories, ready since [date]
+         ```
+      2. If the human says "start epic #N":
+         - Set the issue's project status to `arch:in-progress` via item-edit.
+      3. Otherwise, no action — the epic stays parked in `po:ready`.
+      4. Remind the human about stale `po:ready` epics (e.g., ready for more than a week).
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `board.rescan`.
+
+  review_gater:
+    name: Review Gater
+    description: Handles po review gates — presents artifacts to human, gets approval/rejection.
+    triggers:
+      - po.review
+    publishes:
+      - board.rescan
+    default_publishes: board.rescan
+    instructions: |
+      ## Review Gater
+
+      Gate all review stages by presenting artifacts to the human and acting on their decision.
+
+      ### Status Transition Helper
+
+      To transition an issue's project status, use the cached IDs from the board scanner:
+      ```
+      ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+        --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
+      OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
+      gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
+        --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+      ```
+
+      ### For `po:design-review`:
+      1. Read the epic issue and its linked design doc.
+      2. Present the design summary to the human via HIL:
+         ```
+         Design review for: [Epic title]
+         Design doc: [path]
+         [Key highlights from the design]
+         Approve or request changes?
+         ```
+      3. On approval: set the issue's project status to `arch:plan` via item-edit.
+      4. On rejection: set the issue's project status to `arch:design` via item-edit, append feedback via `gh issue comment`.
+
+      ### For `po:plan-review`:
+      1. Read the epic issue and the story breakdown proposal comment.
+      2. Present the story breakdown to the human via HIL.
+      3. On approval: set the issue's project status to `arch:breakdown` via item-edit.
+      4. On rejection: set the issue's project status to `arch:plan` via item-edit, append feedback via `gh issue comment`.
+
+      ### For `po:accept`:
+      1. Present the completed epic to the human for final acceptance.
+      2. On approval: set the issue's project status to `done` via item-edit, close the issue via `gh issue close`.
+      3. On rejection: set the issue's project status to `arch:in-progress` via item-edit, append feedback via `gh issue comment`.
+
+      ### Rejection Comment Format
+      When the human rejects, append a feedback comment using PROCESS.md format:
+      ```
+      ### 📝 po — <ISO-timestamp>
+
+      [Review type] rejected. Feedback:
+      [Human's feedback verbatim]
+      ```
+      This comment is read by the architect's hat on re-dispatch.
+
+      ### Timeout Behavior
+      On timeout (no response within `timeout_seconds`):
+      - No action. The issue stays at its current status.
+      - It will be re-presented to the human on the next scan cycle.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `board.rescan`.
+
+tasks:
+  enabled: true
+
+memories:
+  enabled: true
+  inject: auto
+  budget: 2000
+
+skills:
+  enabled: true
+  dirs:
+    - .botminter/agent/skills
+    - .botminter/projects/my-project/agent/skills
+    - .botminter/team/human-assistant/agent/skills
+
+RObot:
+  enabled: true
+  timeout_seconds: 600
+  checkin_interval_seconds: 300

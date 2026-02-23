@@ -1,0 +1,11 @@
+name: k8s
+description: "Deploy members as pods to a local Kubernetes cluster"
+type: k8s
+k8s:
+  context: kind-botminter
+  image: ghcr.io/owner/ralph:latest
+  namespace_prefix: botminter
+manager:
+  ralph_yml: ralph.yml
+  prompt: PROMPT.md
+  hats_dir: hats/

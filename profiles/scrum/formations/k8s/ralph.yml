@@ -1,0 +1,8 @@
+model: sonnet
+event_loop:
+  persistent: false
+  max_iterations: 200
+  entry_events:
+    - k8s.deploy
+  default_publishes: k8s.deploy
+hats_dir: hats
