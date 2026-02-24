@@ -633,7 +633,7 @@ mod tests {
         fs::create_dir_all(team_repo.join("agent/agents")).unwrap();
 
         git_cmd(&team_repo, &["init", "-b", "main"]).unwrap();
-        git_cmd(&team_repo, &["add", "-A"]).unwrap();
+        git_cmd(&team_repo, &["add", "-f", "-A"]).unwrap();
         git_cmd(&team_repo, &["commit", "-m", "init"]).unwrap();
 
         create_workspace(&team_repo, &workspace_base, "arch-01", None, None).unwrap();
@@ -676,7 +676,7 @@ mod tests {
         fs::create_dir_all(team_repo.join("agent/agents")).unwrap();
 
         git_cmd(&team_repo, &["init", "-b", "main"]).unwrap();
-        git_cmd(&team_repo, &["add", "-A"]).unwrap();
+        git_cmd(&team_repo, &["add", "-f", "-A"]).unwrap();
         git_cmd(&team_repo, &["commit", "-m", "init"]).unwrap();
 
         create_workspace(
@@ -715,7 +715,7 @@ mod tests {
         fs::create_dir_all(team_repo.join("agent/agents")).unwrap();
 
         git_cmd(&team_repo, &["init", "-b", "main"]).unwrap();
-        git_cmd(&team_repo, &["add", "-A"]).unwrap();
+        git_cmd(&team_repo, &["add", "-f", "-A"]).unwrap();
         git_cmd(&team_repo, &["commit", "-m", "init"]).unwrap();
 
         create_workspace(&team_repo, &workspace_base, "arch-01", None, None).unwrap();
@@ -890,7 +890,7 @@ mod tests {
         fs::create_dir_all(team_repo.join("agent/agents")).unwrap();
 
         git_cmd(&team_repo, &["init", "-b", "main"]).unwrap();
-        git_cmd(&team_repo, &["add", "-A"]).unwrap();
+        git_cmd(&team_repo, &["add", "-f", "-A"]).unwrap();
         git_cmd(&team_repo, &["commit", "-m", "init"]).unwrap();
 
         let workspace_base = tmp.join("workzone");

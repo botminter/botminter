@@ -30,10 +30,11 @@ The wizard prompts you for:
 2. **Team name** — identifier for your team (e.g., `my-team`)
 3. **Profile** — team methodology (e.g., `scrum`, `scrum-compact`, `scrum-compact-telegram`)
 4. **GitHub integration** — auto-detects your `GH_TOKEN` or `gh auth` session, validates the token, then lets you browse orgs and select or create a repo interactively
-5. **Telegram bot token** — optional, for Human-in-the-Loop notifications (required for `scrum-compact-telegram`, optional for others)
-6. **Members and projects** — optionally hire members and select project repos from the same org
+5. **Project board** — select an existing GitHub Project board or create a new one
+6. **Telegram bot token** — optional, for Human-in-the-Loop notifications (required for `scrum-compact-telegram`, optional for others)
+7. **Members and projects** — optionally hire members and select project repos from the same org (new repos only — existing repos are cloned as-is)
 
-`bm init` extracts the selected profile into a new team repo, creates the GitHub remote, bootstraps labels and a GitHub Project board, and registers the team in your config. If any GitHub operation fails, the wizard stops with actionable error messages showing the exact `gh` commands to run manually.
+`bm init` extracts the selected profile into a new team repo (or clones an existing one), bootstraps labels and a GitHub Project board, and registers the team in your config. Config is saved early so that if a GitHub operation fails, the team is still registered and recoverable. If any GitHub operation fails, the wizard stops with actionable error messages showing the exact `gh` commands to run manually.
 
 ??? note "What gets created"
     ```

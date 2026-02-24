@@ -664,3 +664,175 @@ fn e2e_projects_sync_status_and_views() {
 
     // TempProject drops here → deletes the project
 }
+
+/// E2E: `clone_existing_repo` clones a real GitHub repo into a local team dir.
+///
+/// Creates a temp GitHub repo, pushes content to it, then uses
+/// `clone_existing_repo` to clone it locally and verifies the content.
+#[test]
+fn e2e_clone_existing_repo() {
+    require_gh_auth!();
+
+    let repo = super::github::TempRepo::new_in_org("bm-e2e-clone", E2E_ORG)
+        .expect("Failed to create temp GitHub repo");
+    let tmp = tempfile::tempdir().unwrap();
+
+    let (profile_name, _) = find_profile_with_roles(1);
+
+    // Set up and push content to the remote repo
+    let staging = tmp.path().join("staging");
+    let staging_repo = staging.join("team");
+    fs::create_dir_all(&staging_repo).unwrap();
+
+    git(&staging_repo, &["init", "-b", "main"]);
+    git(
+        &staging_repo,
+        &["config", "user.email", "e2e@botminter.test"],
+    );
+    git(&staging_repo, &["config", "user.name", "BM E2E"]);
+
+    profile::extract_profile_to(&profile_name, &staging_repo).unwrap();
+    fs::create_dir_all(staging_repo.join("team")).unwrap();
+    fs::write(staging_repo.join("team/.gitkeep"), "").unwrap();
+
+    git(&staging_repo, &["add", "-A"]);
+    git(&staging_repo, &["commit", "-m", "feat: init"]);
+
+    let remote_url = format!("https://github.com/{}.git", repo.full_name);
+    git(&staging_repo, &["remote", "add", "origin", &remote_url]);
+    git_push(&staging_repo);
+
+    // Now clone using the function under test
+    let clone_dir = tmp.path().join("cloned");
+    fs::create_dir_all(&clone_dir).unwrap();
+
+    bm::commands::init::clone_existing_repo(&clone_dir, &repo.full_name, None)
+        .expect("clone_existing_repo should succeed");
+
+    // Verify the clone landed in {clone_dir}/team/
+    let cloned_repo = clone_dir.join("team");
+    assert!(
+        cloned_repo.join(".git").is_dir(),
+        "cloned team/ should be a git repo"
+    );
+    assert!(
+        cloned_repo.join("botminter.yml").exists(),
+        "cloned repo should contain botminter.yml from the profile"
+    );
+    assert!(
+        cloned_repo.join("team/.gitkeep").exists(),
+        "cloned repo should contain team/.gitkeep"
+    );
+}
+
+/// E2E: `list_gh_projects` returns existing project boards for an org.
+///
+/// Creates a temp project, lists projects, verifies the temp project appears.
+#[test]
+fn e2e_list_gh_projects() {
+    require_gh_auth!();
+
+    let project = super::github::TempProject::new(E2E_ORG, "bm-e2e-list-projects")
+        .expect("Failed to create temp GitHub Project");
+
+    let token = std::env::var("GH_TOKEN")
+        .or_else(|_| {
+            let output = Command::new("gh")
+                .args(["auth", "token"])
+                .output()
+                .expect("failed to run gh auth token");
+            Ok::<String, std::env::VarError>(
+                String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            )
+        })
+        .expect("GH_TOKEN required");
+
+    let projects = bm::commands::init::list_gh_projects(&token, E2E_ORG)
+        .expect("list_gh_projects should succeed");
+
+    // Verify the temp project appears in the list
+    let found = projects
+        .iter()
+        .find(|(n, _)| *n == project.number);
+    assert!(
+        found.is_some(),
+        "list_gh_projects should include project #{}, got: {:?}",
+        project.number,
+        projects
+    );
+
+    let (_, title) = found.unwrap();
+    assert_eq!(
+        title, "bm-e2e-list-projects",
+        "project title should match"
+    );
+
+    // Verify idempotency — listing again returns the same result
+    let projects2 = bm::commands::init::list_gh_projects(&token, E2E_ORG)
+        .expect("second list_gh_projects should succeed");
+    let found2 = projects2.iter().find(|(n, _)| *n == project.number);
+    assert!(
+        found2.is_some(),
+        "second call should also find the project"
+    );
+
+    // TempProject drops here → deletes the project
+}
+
+/// E2E: syncing status field on an existing project board is idempotent.
+///
+/// Creates a project, syncs status options, verifies them, syncs again,
+/// verifies the result is identical.
+#[test]
+fn e2e_sync_status_on_existing_project() {
+    require_gh_auth!();
+
+    let project = super::github::TempProject::new(E2E_ORG, "bm-e2e-sync-existing")
+        .expect("Failed to create temp GitHub Project");
+
+    let manifest = profile::read_manifest("scrum-compact").unwrap();
+
+    // First sync
+    bm::commands::init::sync_project_status_field(
+        E2E_ORG,
+        project.number,
+        &manifest.statuses,
+        None,
+    )
+    .expect("first sync_project_status_field should succeed");
+
+    let options1 = super::github::list_project_status_options(E2E_ORG, project.number);
+    assert!(
+        options1.len() >= 20,
+        "Status field should have at least 20 options after first sync, got {}: {:?}",
+        options1.len(),
+        options1
+    );
+    assert!(
+        options1.contains(&"po:triage".to_string()),
+        "Should contain 'po:triage', got: {:?}",
+        options1
+    );
+
+    // Second sync (idempotent) — should succeed and produce the same result
+    bm::commands::init::sync_project_status_field(
+        E2E_ORG,
+        project.number,
+        &manifest.statuses,
+        None,
+    )
+    .expect("second sync_project_status_field should succeed");
+
+    let options2 = super::github::list_project_status_options(E2E_ORG, project.number);
+    assert_eq!(
+        options1.len(),
+        options2.len(),
+        "Idempotent sync should produce same number of options"
+    );
+    assert_eq!(
+        options1, options2,
+        "Idempotent sync should produce identical options"
+    );
+
+    // TempProject drops here → deletes the project
+}

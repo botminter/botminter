@@ -7,6 +7,12 @@ use anyhow::{bail, Context, Result};
 use crate::config::{self, BotminterConfig, Credentials, TeamEntry};
 use crate::profile;
 
+/// Whether to create a new GitHub Project board or use an existing one.
+enum ProjectChoice {
+    CreateNew,
+    UseExisting(u64),
+}
+
 /// Runs the `bm init` interactive wizard.
 pub fn run() -> Result<()> {
     // Prerequisite checks
@@ -76,6 +82,11 @@ pub fn run() -> Result<()> {
 
     let github_org = select_github_org(&token)?;
     let (github_repo, is_new_repo) = select_or_create_repo(&token, &github_org, &team_name)?;
+
+    // Select or create a GitHub Project board
+    let github_owner = github_repo.split('/').next().unwrap_or(&github_org);
+    let project_choice = select_or_create_project(&token, github_owner, &team_name)?;
+
     let gh_token = Some(token);
 
     let telegram_token: String = cliclack::input("Telegram bot token (optional, enter to skip)")
@@ -88,14 +99,20 @@ pub fn run() -> Result<()> {
         Some(telegram_token)
     };
 
-    // Hire members (optional)
     let manifest = profile::read_manifest(&selected_profile)?;
-    let role_names: Vec<String> = manifest.roles.iter().map(|r| r.name.clone()).collect();
-    let members_to_hire: Vec<(String, String)> = collect_members(&role_names)?;
 
-    // Add projects (optional)
-    let projects_to_add: Vec<(String, String)> =
-        collect_projects(gh_token.as_deref(), Some(&github_org))?;
+    // Hire members and add projects (only for new repos — existing repos already have content)
+    let (members_to_hire, projects_to_add) = if is_new_repo {
+        let role_names: Vec<String> = manifest.roles.iter().map(|r| r.name.clone()).collect();
+        let members = collect_members(&role_names)?;
+        let projects = collect_projects(gh_token.as_deref(), Some(&github_org))?;
+        (members, projects)
+    } else {
+        cliclack::log::info(
+            "Existing repo selected — use `bm hire` and `bm projects add` to modify the team after init.",
+        )?;
+        (Vec::new(), Vec::new())
+    };
 
     // Summary
     let mut summary = format!(
@@ -105,6 +122,14 @@ pub fn run() -> Result<()> {
         workzone.display()
     );
     summary.push_str(&format!("\nGitHub: {}", github_repo));
+    match &project_choice {
+        ProjectChoice::CreateNew => {
+            summary.push_str(&format!("\nProject board: new ({} Board)", team_name));
+        }
+        ProjectChoice::UseExisting(n) => {
+            summary.push_str(&format!("\nProject board: existing (#{n})"));
+        }
+    }
     if !members_to_hire.is_empty() {
         summary.push_str("\nMembers:");
         for (role, name) in &members_to_hire {
@@ -130,78 +155,90 @@ pub fn run() -> Result<()> {
     let spinner = cliclack::spinner();
     spinner.start("Creating team...");
 
-    // 1. Create workzone dir
+    // 1. Create workzone + team dirs
     fs::create_dir_all(&workzone)
         .with_context(|| format!("Failed to create workzone at {}", workzone.display()))?;
-
-    // 2. Create team dir
     fs::create_dir_all(&team_dir)
         .with_context(|| format!("Failed to create team directory at {}", team_dir.display()))?;
 
-    // 3. Create team repo dir
+    // 2. Set up team repo (new: init + extract + push, existing: clone)
     let team_repo = team_dir.join("team");
-    fs::create_dir_all(&team_repo).context("Failed to create team repo directory")?;
 
-    // 4. git init
-    spinner.start("Initializing git repository...");
-    run_git(&team_repo, &["init", "-b", "main"])?;
-
-    // 5. Extract profile content
-    spinner.start("Extracting profile content...");
-    profile::extract_profile_to(&selected_profile, &team_repo)?;
-
-    // 6. Augment botminter.yml with projects
-    if !projects_to_add.is_empty() {
-        augment_manifest_with_projects(&team_repo, &projects_to_add)?;
-    }
-
-    // 7. Create empty dirs: team/, projects/
-    fs::create_dir_all(team_repo.join("team")).context("Failed to create team/ dir")?;
-    fs::create_dir_all(team_repo.join("projects")).context("Failed to create projects/ dir")?;
-    // Add .gitkeep files so empty dirs are tracked
-    fs::write(team_repo.join("team/.gitkeep"), "").ok();
-    fs::write(team_repo.join("projects/.gitkeep"), "").ok();
-
-    // 8. For each hired member: extract skeleton
-    for (role, name) in &members_to_hire {
-        let member_dir_name = format!("{}-{}", role, name);
-        let member_dir = team_repo.join("team").join(&member_dir_name);
-        fs::create_dir_all(&member_dir)
-            .with_context(|| format!("Failed to create member dir {}", member_dir.display()))?;
-
-        profile::extract_member_to(&selected_profile, role, &member_dir)?;
-
-        // Read .botminter.yml template, augment with name, write as botminter.yml
-        finalize_member_manifest(&member_dir, name)?;
-    }
-
-    // 9. For each project: create project dirs
-    for (proj_name, _url) in &projects_to_add {
-        let proj_dir = team_repo.join("projects").join(proj_name);
-        fs::create_dir_all(proj_dir.join("knowledge"))
-            .with_context(|| format!("Failed to create projects/{}/knowledge/", proj_name))?;
-        fs::create_dir_all(proj_dir.join("invariants"))
-            .with_context(|| format!("Failed to create projects/{}/invariants/", proj_name))?;
-        fs::write(proj_dir.join("knowledge/.gitkeep"), "").ok();
-        fs::write(proj_dir.join("invariants/.gitkeep"), "").ok();
-    }
-
-    // 10. git add -A && git commit
-    spinner.start("Creating initial commit...");
-    run_git(&team_repo, &["add", "-A"])?;
-    let commit_msg = format!("feat: initialize team repo ({} profile)", selected_profile);
-    run_git(&team_repo, &["commit", "-m", &commit_msg])?;
-
-    // 11. Create or push to GitHub repo
     if is_new_repo {
+        fs::create_dir_all(&team_repo).context("Failed to create team repo directory")?;
+
+        spinner.start("Initializing git repository...");
+        run_git(&team_repo, &["init", "-b", "main"])?;
+
+        spinner.start("Extracting profile content...");
+        profile::extract_profile_to(&selected_profile, &team_repo)?;
+
+        if !projects_to_add.is_empty() {
+            augment_manifest_with_projects(&team_repo, &projects_to_add)?;
+        }
+
+        fs::create_dir_all(team_repo.join("team")).context("Failed to create team/ dir")?;
+        fs::create_dir_all(team_repo.join("projects")).context("Failed to create projects/ dir")?;
+        fs::write(team_repo.join("team/.gitkeep"), "").ok();
+        fs::write(team_repo.join("projects/.gitkeep"), "").ok();
+
+        for (role, name) in &members_to_hire {
+            let member_dir_name = format!("{}-{}", role, name);
+            let member_dir = team_repo.join("team").join(&member_dir_name);
+            fs::create_dir_all(&member_dir)
+                .with_context(|| format!("Failed to create member dir {}", member_dir.display()))?;
+            profile::extract_member_to(&selected_profile, role, &member_dir)?;
+            finalize_member_manifest(&member_dir, name)?;
+        }
+
+        for (proj_name, _url) in &projects_to_add {
+            let proj_dir = team_repo.join("projects").join(proj_name);
+            fs::create_dir_all(proj_dir.join("knowledge"))
+                .with_context(|| format!("Failed to create projects/{}/knowledge/", proj_name))?;
+            fs::create_dir_all(proj_dir.join("invariants"))
+                .with_context(|| format!("Failed to create projects/{}/invariants/", proj_name))?;
+            fs::write(proj_dir.join("knowledge/.gitkeep"), "").ok();
+            fs::write(proj_dir.join("invariants/.gitkeep"), "").ok();
+        }
+
+        spinner.start("Creating initial commit...");
+        run_git(&team_repo, &["add", "-A"])?;
+        let commit_msg = format!("feat: initialize team repo ({} profile)", selected_profile);
+        run_git(&team_repo, &["commit", "-m", &commit_msg])?;
+
         spinner.start("Creating GitHub repository...");
         create_github_repo(&team_repo, &github_repo, gh_token.as_deref())?;
     } else {
-        spinner.start("Pushing to GitHub repository...");
-        push_to_existing_repo(&team_repo, &github_repo, gh_token.as_deref())?;
+        spinner.start("Cloning existing repository...");
+        clone_existing_repo(&team_dir, &github_repo, gh_token.as_deref())?;
     }
 
-    // 12. Bootstrap labels (kind/* only — statuses are tracked via GitHub Projects)
+    // 3. Register in config (early — before GitHub metadata ops so a failure
+    //    in labels/project doesn't leave ~/.botminter in a broken state)
+    spinner.start("Registering team...");
+    let mut cfg = load_or_default_config();
+
+    let team_entry = TeamEntry {
+        name: team_name.clone(),
+        path: team_dir.clone(),
+        profile: selected_profile.clone(),
+        github_repo: github_repo.clone(),
+        credentials: Credentials {
+            gh_token: gh_token.clone(),
+            telegram_bot_token: telegram_bot_token.clone(),
+            webhook_secret: None,
+        },
+    };
+    cfg.teams.push(team_entry);
+
+    if cfg.teams.len() == 1 {
+        cfg.default_team = Some(team_name.clone());
+    }
+    cfg.workzone = workzone.clone();
+
+    config::save(&cfg)?;
+
+    // 4. Bootstrap labels (idempotent via --force)
     spinner.start("Bootstrapping labels...");
     if let Err(e) = bootstrap_labels(&github_repo, &manifest.labels, gh_token.as_deref()) {
         spinner.stop("Label bootstrap failed");
@@ -224,68 +261,51 @@ pub fn run() -> Result<()> {
         );
     }
 
-    // 13. Create GitHub Project with Status field
-    spinner.start("Creating GitHub Project board...");
-    if let Err(e) = create_github_project(
-        &github_repo,
-        &team_name,
-        &manifest.statuses,
-        gh_token.as_deref(),
-    ) {
-        spinner.stop("Project creation failed");
-        let owner = github_repo.split('/').next().unwrap_or(&github_repo);
-        bail!(
-            "Failed to create GitHub Project: {}\n\n\
-             To fix, create the project manually and then run:\n  \
-             gh project create --owner {} --title '{} Board'\n  \
-             bm projects sync\n\n\
-             Make sure your token has the \"project\" scope (classic PAT) \
-             or \"Organization projects: Admin\" (fine-grained PAT).",
-            e, owner, team_name,
-        );
-    }
-    spinner.stop("GitHub Project board created ✓");
+    // 5. Create or sync GitHub Project board
+    let owner = github_repo.split('/').next().unwrap_or(&github_repo);
+    let project_number = match project_choice {
+        ProjectChoice::CreateNew => {
+            spinner.start("Creating GitHub Project board...");
+            match create_github_project(owner, &team_name, &manifest.statuses, gh_token.as_deref())
+            {
+                Ok(n) => {
+                    spinner.stop("GitHub Project board created");
+                    n
+                }
+                Err(e) => {
+                    spinner.stop("Project creation failed");
+                    bail!(
+                        "Failed to create GitHub Project: {}\n\n\
+                         To fix, create the project manually and then run:\n  \
+                         gh project create --owner {} --title '{} Board'\n  \
+                         bm projects sync\n\n\
+                         Make sure your token has the \"project\" scope (classic PAT) \
+                         or \"Organization projects: Admin\" (fine-grained PAT).",
+                        e, owner, team_name,
+                    );
+                }
+            }
+        }
+        ProjectChoice::UseExisting(n) => {
+            spinner.start("Syncing project board statuses...");
+            sync_project_status_field(owner, n, &manifest.statuses, gh_token.as_deref())?;
+            spinner.stop("Project board statuses synced");
+            n
+        }
+    };
 
     // Print view setup instructions if the profile defines views
     if !manifest.views.is_empty() {
-        let owner = github_repo.split('/').next().unwrap_or(&github_repo);
-        if let Ok(project_number) = find_project_number(owner, &team_name, gh_token.as_deref()) {
-            let project_url = format!(
-                "https://github.com/orgs/{}/projects/{}",
-                owner, project_number
-            );
-            cliclack::log::info(format!(
-                "Set up role-based views at: {}\n\
-                 Run `bm projects sync` anytime to see view instructions.",
-                project_url,
-            ))?;
-        }
+        let project_url = format!(
+            "https://github.com/orgs/{}/projects/{}",
+            owner, project_number
+        );
+        cliclack::log::info(format!(
+            "Set up role-based views at: {}\n\
+             Run `bm projects sync` anytime to see view instructions.",
+            project_url,
+        ))?;
     }
-
-    // 14. Register in config.yml
-    spinner.start("Registering team...");
-    let mut cfg = load_or_default_config();
-
-    let team_entry = TeamEntry {
-        name: team_name.clone(),
-        path: team_dir.clone(),
-        profile: selected_profile.clone(),
-        github_repo: github_repo.clone(),
-        credentials: Credentials {
-            gh_token,
-            telegram_bot_token,
-            webhook_secret: None,
-        },
-    };
-    cfg.teams.push(team_entry);
-
-    // 14. First team = default
-    if cfg.teams.len() == 1 {
-        cfg.default_team = Some(team_name.clone());
-    }
-    cfg.workzone = workzone.clone();
-
-    config::save(&cfg)?;
 
     spinner.stop("Done!");
     cliclack::outro(format!(
@@ -558,38 +578,37 @@ fn create_github_repo(team_repo: &Path, repo_name: &str, gh_token: Option<&str>)
     Ok(())
 }
 
-/// Pushes the team repo to an existing GitHub repo.
-fn push_to_existing_repo(team_repo: &Path, repo_name: &str, gh_token: Option<&str>) -> Result<()> {
-    let remote_url = format!("https://github.com/{}.git", repo_name);
+/// Clones an existing GitHub repo into `{team_dir}/team/`.
+pub fn clone_existing_repo(
+    team_dir: &Path,
+    repo_name: &str,
+    gh_token: Option<&str>,
+) -> Result<()> {
+    let target = team_dir.join("team");
+    let mut cmd = Command::new("gh");
+    cmd.args([
+        "repo",
+        "clone",
+        repo_name,
+        &target.to_string_lossy(),
+    ]);
 
-    // Set remote origin
-    let _ = Command::new("git")
-        .args(["remote", "remove", "origin"])
-        .current_dir(team_repo)
-        .output();
-
-    run_git(team_repo, &["remote", "add", "origin", &remote_url])?;
-
-    // Push with token auth (force-push: bm init bootstraps the repo from scratch,
-    // so any existing content should be overwritten)
-    let mut cmd = Command::new("git");
-    cmd.args(["push", "--force", "-u", "origin", "main"])
-        .current_dir(team_repo);
     if let Some(token) = gh_token {
         cmd.env("GH_TOKEN", token);
     }
-    let output = cmd.output().context("Failed to push to GitHub")?;
+
+    let output = cmd.output().context("Failed to run `gh repo clone`")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!(
-            "Failed to push to existing repo '{}': {}\n\n\
+            "Failed to clone repo '{}': {}\n\n\
              To fix, run manually:\n  \
-             cd {} && git remote add origin {} && git push -u origin main",
+             gh repo clone {} {}",
             repo_name,
             stderr.trim(),
-            team_repo.display(),
-            remote_url,
+            repo_name,
+            target.display(),
         );
     }
 
@@ -768,6 +787,91 @@ fn select_or_create_repo(gh_token: &str, owner: &str, team_name: &str) -> Result
     }
 }
 
+/// Lists GitHub Project boards for an owner and lets the user select one or create a new one.
+/// Returns `ProjectChoice::CreateNew` or `ProjectChoice::UseExisting(number)`.
+fn select_or_create_project(
+    gh_token: &str,
+    owner: &str,
+    team_name: &str,
+) -> Result<ProjectChoice> {
+    let projects = list_gh_projects(gh_token, owner)?;
+
+    let default_title = format!("{} Board", team_name);
+    let create_label = format!("Create new board ({})", default_title);
+
+    let mut select_items: Vec<(String, String, String)> = vec![(
+        "__create__".to_string(),
+        create_label,
+        "Create a new GitHub Project board".to_string(),
+    )];
+    for (number, title) in &projects {
+        select_items.push((
+            number.to_string(),
+            format!("{} (#{number})", title),
+            String::new(),
+        ));
+    }
+
+    let items_ref: Vec<(&str, &str, &str)> = select_items
+        .iter()
+        .map(|(v, l, d)| (v.as_str(), l.as_str(), d.as_str()))
+        .collect();
+
+    let selected: &str = cliclack::select("Project board (type to filter)")
+        .items(&items_ref)
+        .filter_mode()
+        .interact()?;
+
+    if selected == "__create__" {
+        Ok(ProjectChoice::CreateNew)
+    } else {
+        let number: u64 = selected
+            .parse()
+            .context("Failed to parse project number")?;
+        Ok(ProjectChoice::UseExisting(number))
+    }
+}
+
+/// Lists GitHub Project boards for a given owner. Returns `(number, title)` pairs.
+pub fn list_gh_projects(gh_token: &str, owner: &str) -> Result<Vec<(u64, String)>> {
+    let output = Command::new("gh")
+        .args([
+            "project",
+            "list",
+            "--owner",
+            owner,
+            "--format",
+            "json",
+        ])
+        .env("GH_TOKEN", gh_token)
+        .output()
+        .context("Failed to run `gh project list`")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "Failed to list projects for '{}': {}",
+            owner,
+            stderr.trim()
+        );
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(stdout.trim()).context("Could not parse project list JSON")?;
+
+    Ok(json["projects"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|p| {
+            let number = p["number"].as_u64()?;
+            let title = p["title"].as_str()?.to_string();
+            Some((number, title))
+        })
+        .collect())
+}
+
 /// Lists repos for an org/user and lets the user select one as a project fork.
 /// Returns the HTTPS clone URL.
 fn select_project_repo(gh_token: &str, org: &str) -> Result<String> {
@@ -854,17 +958,15 @@ fn bootstrap_labels(
     Ok(())
 }
 
-/// Creates a GitHub Project (v2) and syncs the Status field options.
+/// Creates a GitHub Project (v2), syncs the Status field options, and returns the project number.
 /// Uses the `updateProjectV2Field` GraphQL mutation to replace the built-in
 /// Status field's default options with the profile's status definitions.
 fn create_github_project(
-    repo: &str,
+    owner: &str,
     team_name: &str,
     statuses: &[profile::StatusDef],
     gh_token: Option<&str>,
-) -> Result<()> {
-    let owner = repo.split('/').next().unwrap_or(repo);
-
+) -> Result<u64> {
     // 1. Create project
     let mut cmd = Command::new("gh");
     cmd.args([
@@ -899,7 +1001,7 @@ fn create_github_project(
     // 2. Sync Status field options
     sync_project_status_field(owner, project_number, statuses, gh_token)?;
 
-    Ok(())
+    Ok(project_number)
 }
 
 /// Finds the built-in Status field ID and updates its options via GraphQL.

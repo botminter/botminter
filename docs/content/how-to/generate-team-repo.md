@@ -16,11 +16,17 @@ The wizard will prompt you for:
 2. **Team name** — identifier for your team (e.g., `my-team`)
 3. **Profile** — team methodology (e.g., `scrum`, `scrum-compact`, `scrum-compact-telegram`)
 4. **GitHub integration** — auto-detects your `GH_TOKEN` or `gh auth` session, validates the token, then lets you browse orgs and select or create a repo
-5. **Telegram bot token** — optional, for Human-in-the-Loop notifications (required for `scrum-compact-telegram`, optional for others)
-6. **Members** — optionally hire members during init
-7. **Projects** — select project repos from the same GitHub org (HTTPS-only)
+5. **Project board** — select an existing GitHub Project board or create a new one
+6. **Telegram bot token** — optional, for Human-in-the-Loop notifications (required for `scrum-compact-telegram`, optional for others)
+7. **Members** — optionally hire members during init (new repos only)
+8. **Projects** — select project repos from the same GitHub org (HTTPS-only, new repos only)
+
+!!! note "Existing repos"
+    When selecting an existing repo, the wizard skips member hiring and project addition — the repo already has its own content. Use `bm hire` and `bm projects add` after init to modify the team.
 
 ## What `bm init` does
+
+**For new repos:**
 
 1. **Detects GitHub auth** — checks `GH_TOKEN` env var, then `gh auth token`; shows masked token for confirmation
 2. **Validates token** — calls `gh api user` to verify credentials before proceeding
@@ -30,9 +36,17 @@ The wizard will prompt you for:
 6. **Adds projects** — if specified, creates project directories and updates `botminter.yml`
 7. **Creates initial commit** — `git add -A && git commit`
 8. **Creates GitHub repo** — runs `gh repo create` and pushes (uses the validated token)
-9. **Bootstraps labels** — applies the profile's label scheme; stops with remediation commands on failure
-10. **Creates GitHub Project** — creates a v2 Project board with Status field options from the profile
-11. **Registers in config** — saves team to `~/.botminter/config.yml` (0600 permissions)
+9. **Registers in config** — saves team to `~/.botminter/config.yml` (0600 permissions)
+10. **Bootstraps labels** — applies the profile's label scheme; stops with remediation commands on failure
+11. **Creates/syncs GitHub Project** — creates a new board or syncs Status field options on an existing one
+
+**For existing repos:**
+
+1. **Detects and validates GitHub auth** — same as above
+2. **Clones the existing repo** — into `{workzone}/{team-name}/team/`
+3. **Registers in config** — saves team to `~/.botminter/config.yml` (0600 permissions)
+4. **Bootstraps labels** — idempotent (uses `--force`)
+5. **Creates/syncs GitHub Project** — creates a new board or syncs Status field options on an existing one
 
 !!! warning "Team name must be unique"
     `bm init` refuses to create a team if the target directory already exists. Choose a different name or delete the existing directory.

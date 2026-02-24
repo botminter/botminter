@@ -19,11 +19,12 @@ bm init
 - Validates the token via `gh api user` before proceeding
 - Lists GitHub orgs and personal account for interactive selection
 - Offers to create a new repo or select an existing one from the chosen org
-- Lets you select project repos from the same org (HTTPS-only, validated)
-- Extracts the selected profile into a new team repo with git init
-- Creates GitHub repo (if new), bootstraps labels, and creates a GitHub Project (v2) with Status field
+- Offers to create a new GitHub Project board or select an existing one
+- For new repos: extracts the profile, optionally hires members and adds projects, creates GitHub repo and pushes
+- For existing repos: clones the repo (skips member/project prompts — use `bm hire` and `bm projects add` after init)
+- Registers the team in `~/.botminter/config.yml` early (before label/project operations) so a failure doesn't leave config in a broken state
+- Bootstraps labels (idempotent via `--force`) and creates/syncs the GitHub Project board's Status field
 - Stops with actionable error messages if any GitHub operation fails
-- Registers the team in `~/.botminter/config.yml` (0600 permissions)
 - First registered team becomes the default
 
 ## Member management
