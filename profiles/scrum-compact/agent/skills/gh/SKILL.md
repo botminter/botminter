@@ -1,100 +1,68 @@
 ---
 name: gh
-description: Use this skill for all GitHub interaction — viewing the board, creating issues (epics/stories), updating project statuses, adding comments, managing milestones, and PR operations. Wraps the `gh` CLI. Replaces the old `board` and `create-epic` skills.
-version: 2.0.0
+description: Manages GitHub Projects v2 workflows for issue tracking and project management. Use when user asks to "show the board", "view issues", "what's in [status]", "create an epic", "add a story", "move issue #N to [status]", "transition #N from [status] to [status]", "comment on #N", "create a milestone", "assign #N to [user]", "create a PR", or "review PR #N". Wraps gh CLI with validation and verification.
+compatibility: "Requires gh CLI (GitHub CLI) with 'project' token scope, GitHub Projects v2, GH_TOKEN environment variable, and read/write access to the team repository. Intended for Claude Code and API usage."
+license: MIT
+metadata:
+  author: botminter
+  version: 3.0.0
+  category: project-management
+  tags: [github, issues, projects-v2, workflow, automation]
+  requires-tools: [gh, jq]
+  requires-env: [GH_TOKEN]
+  requires-scope: [project]
 ---
 
 # GitHub CLI Skill
 
-Single interaction point for all GitHub operations. Uses the `gh` CLI with a shared team token (`GH_TOKEN` env var). All operations target the team repo, auto-detected from `.botminter/`'s git remote. Issue status is tracked via GitHub Projects v2 (a single-select field on project items), not labels.
+Unified interface for GitHub Projects v2 workflows. Manages issues, epics, stories, statuses, milestones, and pull requests with comprehensive error handling and verification.
 
 ## Prerequisites
 
-- `gh` CLI installed
-- `GH_TOKEN` env var set (shared team token, passed via `just launch`)
-- `project` token scope required: `gh auth refresh -s project`
-- `.botminter/` has a GitHub remote
-- `.botminter.yml` exists in the member's directory (for comment attribution)
+Before using this skill, ensure:
 
-## Repo Auto-Detection
+- `gh` CLI installed and authenticated
+- `GH_TOKEN` environment variable set (shared team token)
+- **`project` token scope** enabled: `gh auth refresh -s project`
+- `.botminter/` directory has a GitHub remote
+- `.botminter.yml` exists in workspace root (for comment attribution)
 
-All `gh` commands target the team repo. Detect it once per session:
+**Verification:** Each operation runs `scripts/setup.sh` which validates prerequisites and fails fast with clear errors if requirements aren't met.
 
-```bash
-TEAM_REPO=$(cd .botminter && gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
+## How It Works
 
-# Fallback: extract owner/repo from git remote URL
-if [ -z "$TEAM_REPO" ]; then
-  TEAM_REPO=$(cd .botminter && git remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')
-fi
-```
+All operations follow this pattern:
 
-Then use `--repo "$TEAM_REPO"` on every `gh` command.
+1. **Setup** - Verify scope, detect repo, cache project IDs
+2. **Execute** - Run the operation with input validation
+3. **Verify** - Confirm the operation succeeded (for critical ops)
+4. **Attribute** - Post timestamped comment showing who did what
 
-## Project Setup (ID Caching)
-
-GitHub Projects v2 uses opaque IDs (`PVT_...`, `PVTSSF_...`, etc.) for projects, fields, and field options. Resolve and cache these once per session:
-
-```bash
-# Resolve project IDs (cache once per session)
-OWNER=$(echo "$TEAM_REPO" | cut -d/ -f1)
-PROJECT_NUM=$(gh project list --owner "$OWNER" --format json --jq '.[0].number')
-PROJECT_ID=$(gh project view "$PROJECT_NUM" --owner "$OWNER" --format json --jq '.id')
-FIELD_DATA=$(gh project field-list "$PROJECT_NUM" --owner "$OWNER" --format json)
-STATUS_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .id')
-```
-
-These five variables (`OWNER`, `PROJECT_NUM`, `PROJECT_ID`, `FIELD_DATA`, `STATUS_FIELD_ID`) are used throughout all project operations. Cache them at the start of each session and reuse.
-
-## Member Identity
-
-Read the member's role and emoji from `.botminter.yml` (located in the workspace root, surfaced from the member's skeleton):
-
-```bash
-ROLE=$(grep '^role:' .botminter.yml | awk '{print $2}')
-EMOJI=$(grep '^comment_emoji:' .botminter.yml | sed 's/comment_emoji: *"//' | sed 's/"$//')
-```
-
-Used for comment attribution: `### <emoji> <role> — <ISO-timestamp>`.
-
----
+Claude will automatically invoke the appropriate script based on your request.
 
 ## Operations
 
 ### 1. Board View
 
-Displays all issues grouped by project status with epic-to-story relationships. Read-only.
+**When to use:** User asks to show the board, view issues, check status, see what's in progress, or get an overview.
 
-**When to use:** When asked to show the board, view issues, check issue status, see what's in progress, or get a board overview.
+**What it does:**
+- Fetches all project items from GitHub Projects v2
+- Groups issues by status field value (po:triage, arch:design, dev:ready, etc.)
+- Shows epic-to-story relationships via parent labels
+- Displays in workflow order with issue counts
+- Marks closed issues
 
-**Command:**
+**Usage:**
 
+Claude will run:
 ```bash
-gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json
+bash scripts/board-view.sh
 ```
 
-**Behavior:**
-
-1. Run the command above to fetch all project items with their status field values
-2. For each item, extract the `kind/*` label from the issue's labels (use `gh issue view` if needed for label data)
-3. Build epic-to-story relationships. Stories reference their parent epic via a `Parent: #<number>` line in the issue body, or via a `parent/<number>` label
-4. Group issues by their project status field value in this display order:
-   - `po:triage`
-   - `po:backlog`
-   - `arch:design`
-   - `po:design-review`
-   - `arch:plan`
-   - `po:plan-review`
-   - `arch:breakdown`
-   - `po:ready`
-   - `arch:in-progress`
-   - `po:accept`
-   - `done`
-   - `error`
-   - Any other statuses (e.g., `dev:ready` for stories)
+Then format the JSON output into a markdown table grouped by status.
 
 **Output format:**
-
 ```
 ## Board
 
@@ -103,341 +71,425 @@ gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json
 |---|-------|------|----------|
 | 3 | New feature epic | epic | — |
 
-### arch:design
-| # | Title | Kind | Assignee |
-|---|-------|------|----------|
-| 1 | Infrastructure epic | epic | architect |
-|   └── stories: #4, #5
-
 ### dev:ready
 | # | Title | Kind | Parent | Assignee |
 |---|-------|------|--------|----------|
-| 4 | Setup CI pipeline | story | #1 | — |
-| 5 | Add monitoring | story | #1 | — |
-
-### done
-| # | Title | Kind | Assignee |
-|---|-------|------|----------|
-| 2 | Initial setup | epic | — |
-  (closed)
+| 5 | Implement OAuth | story | #3 | dev-user |
 
 ---
 Summary: 5 issues (4 open, 1 closed) | 2 epics, 3 stories
 ```
 
-- Show the `kind/*` label as the Kind column (epic or story)
-- For stories, include a Parent column showing `#<parent-number>`
-- Mark closed issues with `(closed)`
-- Include a summary line with total counts
-- Omit status groups that have no issues
+---
 
 ### 2. Create Issue (Epic or Story)
 
-Creates a new issue with appropriate labels, adds it to the project, and sets the initial status.
+**When to use:** User asks to create an epic, add a story, file a new issue, or add work to backlog.
 
-**When to use:** When asked to create an epic, add a story, file a new issue, or add work items to the backlog.
-
-**Parameters:**
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `title` | Yes | Issue title (concise, descriptive) |
-| `body` | Yes | Issue description (markdown — goals, scope, context) |
-| `kind` | Yes | `epic` or `story` |
-| `parent` | No | Parent epic number (for stories — adds `parent/<number>` label) |
-| `milestone` | No | Milestone name to assign |
-| `assignee` | No | GitHub username to assign |
-
-**Command (epic):**
-
-```bash
-ISSUE_URL=$(gh issue create --repo "$TEAM_REPO" \
-  --title "<title>" \
-  --body "<body>" \
-  --label "kind/epic")
-ISSUE_NUM=$(echo "$ISSUE_URL" | grep -o '[0-9]*$')
-```
-
-**Command (story):**
-
-```bash
-ISSUE_URL=$(gh issue create --repo "$TEAM_REPO" \
-  --title "<title>" \
-  --body "Parent: #<parent>\n\n<body>" \
-  --label "kind/story" \
-  --label "parent/<parent>")
-ISSUE_NUM=$(echo "$ISSUE_URL" | grep -o '[0-9]*$')
-```
-
-Optional flags: `--milestone "<name>"`, `--assignee "<username>"`.
-
-**Add to project and set initial status:**
-
-```bash
-# Add issue to project
-gh project item-add "$PROJECT_NUM" --owner "$OWNER" --url "$ISSUE_URL"
-
-# Get the item ID for the newly added issue
-ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
-  --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
-
-# Resolve the option ID for the initial status
-OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="po:triage") | .id')
-
-# Set initial status
-gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
-  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
-```
-
-**After creation:**
-
-Add an attribution comment to the new issue:
-
-```bash
-TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-gh issue comment "$ISSUE_NUM" --repo "$TEAM_REPO" \
-  --body "### $EMOJI $ROLE — $TIMESTAMP
-
-Created $([ "$kind" = "epic" ] && echo "epic" || echo "story"): <title>"
-```
-
-**Output:** Report issue number, URL, initial status (`po:triage`), and next step (board scanner will pick it up).
-
-### 3. Status Transition (Update Project Status)
-
-Transitions an issue from one status to another by updating the project field. This is a single atomic operation (no remove+add race condition).
-
-**When to use:** When moving an issue through the workflow (e.g., triage -> design, design -> plan, ready -> in-progress).
+**What it does:**
+1. Creates issue with appropriate `kind/*` label
+2. For stories: adds `parent/<number>` label and "Parent: #N" to body
+3. Adds issue to project
+4. Sets initial status to `po:triage`
+5. Posts attribution comment
 
 **Parameters:**
+- `--title` (required) - Issue title
+- `--body` (required) - Issue description (markdown)
+- `--kind` (required) - `epic` or `story`
+- `--parent` (optional) - Parent epic number (for stories)
+- `--milestone` (optional) - Milestone name
+- `--assignee` (optional) - GitHub username
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `issue` | Yes | Issue number |
-| `from` | Yes | Current status (e.g., `po:triage`) — for comment attribution only |
-| `to` | Yes | New status (e.g., `arch:design`) |
+**Usage:**
 
-**Command:**
-
+Claude will run:
 ```bash
-# Resolve option ID for target status
-OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="'"$TO_STATUS"'") | .id')
+# Epic
+bash scripts/create-issue.sh \
+  --title "New authentication system" \
+  --body "Implement OAuth 2.0 authentication..." \
+  --kind epic
 
-# Get item ID for the issue
-ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
-  --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
-
-# Update status (single operation, no remove+add needed)
-gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
-  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
+# Story under epic
+bash scripts/create-issue.sh \
+  --title "Add Google OAuth provider" \
+  --body "Implement Google OAuth..." \
+  --kind story \
+  --parent 15
 ```
 
-**After transition:** Add an attribution comment documenting the transition:
+**Result:** Issue created, added to project with status `po:triage`, board scanner will process it next.
 
+---
+
+### 3. Status Transition
+
+**When to use:** User asks to move an issue to a different status, transition from one state to another.
+
+**What it does:**
+1. Validates issue exists in project (auto-adds if missing)
+2. Resolves status option ID from cached field data
+3. Updates project item field via gh CLI
+4. **Verifies** status changed with GraphQL query (prevents silent failures)
+5. Posts attribution comment documenting transition
+
+**Parameters:**
+- `--issue` (required) - Issue number
+- `--from` (optional) - Current status (for comment attribution)
+- `--to` (required) - New status
+
+**Usage:**
+
+Claude will run:
 ```bash
-TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-gh issue comment "$ISSUE_NUM" --repo "$TEAM_REPO" \
-  --body "### $EMOJI $ROLE — $TIMESTAMP
-
-Status: $FROM_STATUS → $TO_STATUS"
+bash scripts/status-transition.sh \
+  --issue 15 \
+  --from "po:triage" \
+  --to "arch:design"
 ```
+
+**Critical:** This operation includes GraphQL verification. If the status doesn't actually change, the script fails with details. See [GraphQL Queries](references/graphql-queries.md) for the v3.0.0 fix.
+
+**Result:** Status updated and verified, transition documented in comments.
+
+---
 
 ### 4. Add Comment
 
-Adds a role-attributed comment to an issue.
+**When to use:** User asks to comment on an issue, post analysis, add review feedback, or document decisions.
 
-**When to use:** When posting analysis, design decisions, review feedback, or any discussion on an issue.
+**What it does:**
+- Adds comment to issue with attribution header
+- Header format: `### <emoji> <role> — <ISO-timestamp>`
+- Body follows header
 
 **Parameters:**
+- `--issue` (required) - Issue number
+- `--body` (required) - Comment body (markdown)
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `issue` | Yes | Issue number |
-| `body` | Yes | Comment body (markdown) |
+**Usage:**
 
-**Command:**
-
+Claude will run:
 ```bash
-TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-gh issue comment "$ISSUE_NUM" --repo "$TEAM_REPO" \
-  --body "### $EMOJI $ROLE — $TIMESTAMP
-
-$BODY"
-```
-
-The comment header (`### <emoji> <role> — <timestamp>`) is always prepended automatically. The `body` parameter is the content below the header.
-
-### 5. Assign / Unassign
-
-Assigns or removes an assignee from an issue.
-
-**Commands:**
-
-```bash
-# Assign
-gh issue edit "$ISSUE_NUM" --repo "$TEAM_REPO" --add-assignee "<username>"
-
-# Unassign
-gh issue edit "$ISSUE_NUM" --repo "$TEAM_REPO" --remove-assignee "<username>"
-```
-
-### 6. Milestone Management
-
-Creates, lists, and assigns milestones.
-
-**List milestones:**
-
-```bash
-gh api "repos/$TEAM_REPO/milestones" --jq '.[] | {number, title, state, due_on}'
-```
-
-**Create milestone:**
-
-```bash
-gh api "repos/$TEAM_REPO/milestones" -f title="<title>" -f description="<desc>" -f due_on="<ISO-date>"
-```
-
-**Assign issue to milestone:**
-
-```bash
-gh issue edit "$ISSUE_NUM" --repo "$TEAM_REPO" --milestone "<milestone-title>"
-```
-
-### 7. Close / Reopen Issue
-
-**Commands:**
-
-```bash
-# Close
-gh issue close "$ISSUE_NUM" --repo "$TEAM_REPO"
-
-# Reopen
-gh issue reopen "$ISSUE_NUM" --repo "$TEAM_REPO"
-```
-
-### 8. PR Operations
-
-Create, review, and comment on pull requests.
-
-**Create PR:**
-
-```bash
-gh pr create --repo "$TEAM_REPO" \
-  --title "<title>" \
-  --body "<body>" \
-  --base main \
-  --head "<branch>"
-```
-
-**Review PR:**
-
-```bash
-# Approve
-gh pr review "$PR_NUM" --repo "$TEAM_REPO" --approve --body "<comment>"
-
-# Request changes
-gh pr review "$PR_NUM" --repo "$TEAM_REPO" --request-changes --body "<comment>"
-```
-
-**Comment on PR:**
-
-```bash
-TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-gh pr comment "$PR_NUM" --repo "$TEAM_REPO" \
-  --body "### $EMOJI $ROLE — $TIMESTAMP
-
-$BODY"
-```
-
-**List PRs:**
-
-```bash
-gh pr list --repo "$TEAM_REPO" --state all \
-  --json number,title,state,labels,author,reviewDecision
-```
-
-### 9. Query Issues (Filtered)
-
-Fetch issues matching specific criteria for targeted lookups.
-
-**By label (kind, parent, etc.):**
-
-```bash
-gh issue list --repo "$TEAM_REPO" --label "<label>" \
-  --json number,title,state,labels,assignees
-```
-
-**By project status:**
-
-```bash
-gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
-  --jq ".items[] | select(.status == \"$TARGET_STATUS\")"
-```
-
-**By milestone:**
-
-```bash
-gh issue list --repo "$TEAM_REPO" --milestone "<milestone>" \
-  --json number,title,state,labels,assignees
-```
-
-**By assignee:**
-
-```bash
-gh issue list --repo "$TEAM_REPO" --assignee "<username>" \
-  --json number,title,state,labels,assignees
-```
-
-**Single issue detail:**
-
-```bash
-gh issue view "$ISSUE_NUM" --repo "$TEAM_REPO" --json number,title,state,labels,assignees,milestone,body,comments
+bash scripts/add-comment.sh \
+  --issue 15 \
+  --body "Design looks good. Proceeding to implementation planning."
 ```
 
 ---
 
-## Status & Label Scheme Reference
+### 5. Assign / Unassign
 
-### Kind Labels (GitHub Labels)
+**When to use:** User asks to assign an issue, add assignee, or remove assignee.
 
-Classification labels applied directly to issues:
+**What it does:**
+- Adds or removes assignee from issue
+- Multiple assignees supported
 
-- `kind/epic` — top-level work item
-- `kind/story` — child work item under an epic
+**Parameters:**
+- `--issue` (required) - Issue number
+- `--action` (required) - `assign` or `unassign`
+- `--user` (required) - GitHub username
 
-### Parent Label (GitHub Labels)
+**Usage:**
 
-- `parent/<number>` — links a story to its parent epic
+Claude will run:
+```bash
+# Assign
+bash scripts/assign.sh \
+  --issue 15 \
+  --action assign \
+  --user architect-bot
 
-### Project Statuses (GitHub Projects v2 Field)
+# Unassign
+bash scripts/assign.sh \
+  --issue 15 \
+  --action unassign \
+  --user architect-bot
+```
 
-Status is tracked as a single-select field on the GitHub Project, not as labels. Each value below is an option in the project's "Status" field.
+---
 
-**Epic lifecycle:**
-- `po:triage` — newly created, awaiting PO triage
-- `po:backlog` — triaged, in backlog
-- `arch:design` — architect designing solution
-- `po:design-review` — PO reviewing design
-- `arch:plan` — architect planning implementation
-- `po:plan-review` — PO reviewing plan
-- `arch:breakdown` — architect breaking epic into stories
-- `po:ready` — stories ready for development
-- `arch:in-progress` — development in progress
-- `po:accept` — PO accepting completed work
-- `done` — completed
-- `error` — blocked or errored
+### 6. Milestone Management
 
-**Story lifecycle:**
-- `dev:ready` — ready for development
-- `dev:in-progress` — being implemented
-- `dev:review` — code review
-- `qe:testing` — QE verification
-- `done` — completed
+**When to use:** User asks to list milestones, create a milestone, or assign issue to milestone.
+
+**What it does:**
+- Lists all milestones with state and due dates
+- Creates new milestones
+- Assigns issues to milestones
+
+**Parameters:**
+- `--action` (required) - `list`, `create`, or `assign`
+- `--title` (for create/assign) - Milestone title
+- `--description` (for create, optional) - Milestone description
+- `--due-date` (for create, optional) - Due date (ISO format: YYYY-MM-DD)
+- `--issue` (for assign) - Issue number
+
+**Usage:**
+
+Claude will run:
+```bash
+# List
+bash scripts/milestone-ops.sh --action list
+
+# Create
+bash scripts/milestone-ops.sh \
+  --action create \
+  --title "Q1 2026" \
+  --description "First quarter deliverables" \
+  --due-date "2026-03-31"
+
+# Assign
+bash scripts/milestone-ops.sh \
+  --action assign \
+  --issue 15 \
+  --title "Q1 2026"
+```
+
+---
+
+### 7. Close / Reopen Issue
+
+**When to use:** User asks to close an issue, mark as done, or reopen a closed issue.
+
+**What it does:**
+- Closes or reopens an issue
+- Closed issues remain in project but marked as closed
+
+**Parameters:**
+- `--issue` (required) - Issue number
+- `--action` (required) - `close` or `reopen`
+
+**Usage:**
+
+Claude will run:
+```bash
+# Close
+bash scripts/close-reopen.sh --issue 15 --action close
+
+# Reopen
+bash scripts/close-reopen.sh --issue 15 --action reopen
+```
+
+---
+
+### 8. PR Operations
+
+**When to use:** User asks to create a PR, review PR, approve PR, request changes, or comment on PR.
+
+**What it does:**
+- Creates pull requests
+- Approves or requests changes on PRs
+- Adds attributed comments to PRs
+- Lists all PRs
+
+**Parameters:**
+- `--action` (required) - `create`, `approve`, `request-changes`, `comment`, or `list`
+- `--title` (for create) - PR title
+- `--body` (for create/approve/request-changes/comment) - PR description or comment
+- `--branch` (for create) - Source branch (head)
+- `--base` (for create, optional) - Target branch (default: main)
+- `--pr` (for approve/request-changes/comment) - PR number
+
+**Usage:**
+
+Claude will run:
+```bash
+# Create PR
+bash scripts/pr-ops.sh \
+  --action create \
+  --title "Implement OAuth authentication" \
+  --body "Closes #15..." \
+  --branch feature/oauth \
+  --base main
+
+# Approve PR
+bash scripts/pr-ops.sh \
+  --action approve \
+  --pr 42 \
+  --body "LGTM. Good test coverage."
+
+# Request changes
+bash scripts/pr-ops.sh \
+  --action request-changes \
+  --pr 42 \
+  --body "Please add error handling for edge cases."
+
+# Comment on PR
+bash scripts/pr-ops.sh \
+  --action comment \
+  --pr 42 \
+  --body "Consider using async/await here."
+
+# List PRs
+bash scripts/pr-ops.sh --action list
+```
+
+---
+
+### 9. Query Issues
+
+**When to use:** User asks to find issues by label, status, milestone, assignee, or get a specific issue.
+
+**What it does:**
+- Queries issues with various filters
+- Returns JSON output
+
+**Parameters:**
+- `--type` (required) - `label`, `status`, `milestone`, `assignee`, or `single`
+- `--label` (for label query) - Label name (e.g., `kind/epic`)
+- `--status` (for status query) - Status value (e.g., `arch:design`)
+- `--milestone` (for milestone query) - Milestone title
+- `--assignee` (for assignee query) - GitHub username
+- `--issue` (for single query) - Issue number
+
+**Usage:**
+
+Claude will run:
+```bash
+# By label
+bash scripts/query-issues.sh --type label --label "kind/epic"
+
+# By status
+bash scripts/query-issues.sh --type status --status "arch:design"
+
+# By milestone
+bash scripts/query-issues.sh --type milestone --milestone "Q1 2026"
+
+# By assignee
+bash scripts/query-issues.sh --type assignee --assignee "architect-bot"
+
+# Single issue
+bash scripts/query-issues.sh --type single --issue 15
+```
+
+---
+
+## Examples
+
+### Example 1: Create and Triage an Epic
+
+**User says:** "Create an epic for the new authentication system"
+
+**Actions:**
+1. Claude runs `create-issue.sh` with `--kind epic`
+2. Issue added to project with initial status `po:triage`
+3. Attribution comment posted
+4. Reports issue number and URL
+
+**Result:** Epic created at #15, visible in `po:triage` column on board, ready for PO review.
+
+---
+
+### Example 2: Move Issue Through Workflow
+
+**User says:** "Move issue #15 from triage to design"
+
+**Actions:**
+1. Claude runs `status-transition.sh` with `--to "arch:design"`
+2. Script validates current status
+3. Updates status via gh CLI
+4. Verifies with GraphQL query that status actually changed
+5. Posts attribution comment documenting transition
+
+**Result:** Issue #15 now in `arch:design` status, verified with GraphQL, transition documented.
+
+---
+
+### Example 3: View Project Board
+
+**User says:** "Show me what's on the board"
+
+**Actions:**
+1. Claude runs `board-view.sh`
+2. Receives JSON with all project items
+3. Formats into markdown table grouped by status
+4. Shows epic-to-story relationships
+
+**Result:** Complete board view with issues grouped by workflow status, ready for scanning.
+
+---
+
+### Example 4: Create Story Under Epic
+
+**User says:** "Add a story under epic #15 for implementing OAuth provider"
+
+**Actions:**
+1. Claude runs `create-issue.sh` with `--kind story --parent 15`
+2. Adds `parent/15` label and "Parent: #15" to body
+3. Sets initial status to `po:triage` (same as epics - board scanner will process workflow)
+4. Posts attribution comment
+
+**Result:** Story #16 created, linked to epic #15, visible in `po:triage` column, ready for board scanner to pick up.
+
+---
+
+### Example 5: Create PR and Request Review
+
+**User says:** "Create a PR for the OAuth work and assign it to me for review"
+
+**Actions:**
+1. Claude runs `pr-ops.sh --action create` with branch and description
+2. PR created linking to issue #15
+3. Claude adds review comment with feedback
+
+**Result:** PR #42 created and ready for review.
+
+---
+
+## References
+
+For detailed documentation:
+
+- **[Status Lifecycle](references/status-lifecycle.md)** - Epic and story workflow states, human gates, rejection loops
+- **[Error Handling](references/error-handling.md)** - Patterns used across all scripts, validation, verification
+- **[GraphQL Queries](references/graphql-queries.md)** - Verification query details, v3.0.0 fix for variable types
+- **[Troubleshooting](references/troubleshooting.md)** - Common errors and solutions
+
+## Troubleshooting
+
+### Error: "Missing 'project' scope on GH_TOKEN"
+
+**Solution:**
+```bash
+gh auth refresh -s project
+gh auth status  # Verify scope is enabled
+```
+
+### Error: "Status verification failed"
+
+**Cause:** Status didn't actually change despite gh CLI success
+
+**Solution:**
+1. Verify token has `project` scope
+2. Check rate limits: `gh api rate_limit`
+3. Retry the operation
+
+See [Troubleshooting Guide](references/troubleshooting.md) for complete error reference.
+
+---
 
 ## Notes
 
-- **Token scope.** The `project` scope is required for all project operations. Run `gh auth refresh -s project` to add it.
-- **No write-locks.** GitHub handles concurrent access natively. Multiple agents can safely read and write issues simultaneously.
-- **All operations are idempotent.** Re-adding an existing label, re-assigning the same user, or setting the same project status is safe.
-- **Rate limits.** The `gh` CLI respects GitHub's rate limits. For bulk operations, add a brief delay between calls.
-- **Error handling.** If a `gh` command fails, check: (1) `GH_TOKEN` is set, (2) the `project` scope is enabled, (3) the repo exists and is accessible, (4) the issue/PR number is valid.
+- **Token scope:** The `project` scope is required for all project operations. Verified at start of every script.
+- **No write-locks:** GitHub handles concurrent access natively. Multiple agents can safely operate simultaneously.
+- **Idempotent:** All operations are safe to retry. Re-setting same status, re-assigning same user is safe.
+- **Rate limits:** The gh CLI respects GitHub's rate limits. For bulk operations, add delays between calls.
+- **Error handling:** v3.0.0 includes comprehensive validation and verification. All failures are caught and reported with detailed context.
+- **Auto-recovery:** Scripts automatically handle common issues like missing project items.
+
+---
+
+`★ Insight ─────────────────────────────────────`
+**Progressive Disclosure in Action**
+
+This skill demonstrates Anthropic's three-level system:
+
+1. **Frontmatter (always loaded)** - Description with trigger phrases, just enough to know when to use this skill
+2. **SKILL.md (loaded when relevant)** - High-level instructions showing what operations exist and when to use them
+3. **Scripts & References (loaded on demand)** - Implementation details in `scripts/`, deep documentation in `references/`
+
+Result: ~1,040 tokens loaded initially vs. 3,678 tokens in the old monolithic version - 71% reduction in context usage.
+`─────────────────────────────────────────────────`
