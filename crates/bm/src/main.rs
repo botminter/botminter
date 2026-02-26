@@ -1,13 +1,17 @@
 use anyhow::Result;
 use clap::Parser;
+use clap_complete::CompleteEnv;
 
 use bm::cli::{
     Cli, Command, DaemonCommand, KnowledgeCommand, MembersCommand, ProfilesCommand,
     ProjectsCommand, RolesCommand, TeamsCommand,
 };
 use bm::commands;
+use bm::completions;
 
 fn main() -> Result<()> {
+    CompleteEnv::with_factory(completions::build_cli_with_completions).complete();
+
     let cli = Cli::parse();
 
     match cli.command {

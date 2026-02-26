@@ -131,7 +131,10 @@ pub enum Command {
         interval: u64,
     },
 
-    /// Generate shell completion scripts
+    /// Generate dynamic shell completions
+    ///
+    /// Completions are dynamic: tab suggestions include real team names, roles,
+    /// members, profiles, formations, and projects from your configuration.
     #[command(after_long_help = "\
 Examples:
   Bash (add to ~/.bashrc):
@@ -147,7 +150,10 @@ Examples:
     echo 'bm completions powershell | Invoke-Expression' >> $PROFILE
 
   Elvish (add to ~/.elvish/rc.elv):
-    echo 'eval (bm completions elvish | slurp)' >> ~/.elvish/rc.elv")]
+    echo 'eval (bm completions elvish | slurp)' >> ~/.elvish/rc.elv
+
+The generated script delegates to the bm binary at tab-time, so completions
+always reflect your current configuration (teams, roles, members, etc.).")]
     Completions {
         /// Shell to generate completions for
         shell: clap_complete::Shell,

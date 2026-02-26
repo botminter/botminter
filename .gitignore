@@ -7,6 +7,8 @@ ralph.yml
 PROMPT.md
 
 # Personal/internal
+TESTING-NOTES.md
+tmp-prompt-experiment/
 
 # Secrets
 *.token

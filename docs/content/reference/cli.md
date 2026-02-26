@@ -441,7 +441,7 @@ bm daemon status [-t <team>]
 
 ### `bm completions`
 
-Generate shell completion scripts.
+Generate dynamic shell completions.
 
 ```bash
 bm completions <shell>
@@ -450,6 +450,19 @@ bm completions <shell>
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `<shell>` | Yes | Shell to generate completions for (`bash`, `zsh`, `fish`, `powershell`, `elvish`) |
+
+Completions are **dynamic** — tab suggestions include real values from your configuration:
+
+- **Team names** for `-t`/`--team` flags
+- **Role names** for `bm hire <role>`
+- **Member names** for `bm members show <member>`
+- **Profile names** for `bm profiles describe <profile>`
+- **Project names** for `bm projects show <project>`
+- **Formation names** for `bm start --formation <formation>`
+- **Daemon modes** (`webhook`, `poll`) for `bm daemon start --mode`
+- **Knowledge scopes** (`team`, `project`, `member`, `member-project`) for `bm knowledge --scope`
+
+The generated script delegates to the `bm` binary at tab-time, so completions always reflect your current configuration.
 
 **Setup examples:**
 
@@ -469,6 +482,18 @@ bm completions <shell>
 
     ```bash
     bm completions fish > ~/.config/fish/completions/bm.fish
+    ```
+
+=== "PowerShell"
+
+    ```powershell
+    echo 'bm completions powershell | Invoke-Expression' >> $PROFILE
+    ```
+
+=== "Elvish"
+
+    ```bash
+    echo 'eval (bm completions elvish | slurp)' >> ~/.elvish/rc.elv
     ```
 
 ## Development commands

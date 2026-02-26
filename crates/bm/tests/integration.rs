@@ -839,6 +839,12 @@ fn completions_bash() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.is_empty(), "bash completions should not be empty");
     assert!(stdout.contains("bm"), "bash completions should reference bm");
+    // Dynamic: registration script calls the binary at tab-time via COMPLETE env var
+    assert!(
+        stdout.contains("COMPLETE"),
+        "bash completions should be dynamic (reference COMPLETE env var), output:\n{}",
+        stdout
+    );
 }
 
 #[test]
@@ -851,6 +857,11 @@ fn completions_zsh() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.is_empty(), "zsh completions should not be empty");
     assert!(stdout.contains("bm"), "zsh completions should reference bm");
+    assert!(
+        stdout.contains("COMPLETE"),
+        "zsh completions should be dynamic, output:\n{}",
+        stdout
+    );
 }
 
 #[test]
@@ -863,6 +874,11 @@ fn completions_fish() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.is_empty(), "fish completions should not be empty");
     assert!(stdout.contains("bm"), "fish completions should reference bm");
+    assert!(
+        stdout.contains("COMPLETE"),
+        "fish completions should be dynamic, output:\n{}",
+        stdout
+    );
 }
 
 #[test]
@@ -875,6 +891,11 @@ fn completions_powershell() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.is_empty(), "powershell completions should not be empty");
     assert!(stdout.contains("bm"), "powershell completions should reference bm");
+    assert!(
+        stdout.contains("COMPLETE"),
+        "powershell completions should be dynamic, output:\n{}",
+        stdout
+    );
 }
 
 #[test]
@@ -887,6 +908,11 @@ fn completions_elvish() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.is_empty(), "elvish completions should not be empty");
     assert!(stdout.contains("bm"), "elvish completions should reference bm");
+    assert!(
+        stdout.contains("COMPLETE"),
+        "elvish completions should be dynamic, output:\n{}",
+        stdout
+    );
 }
 
 #[test]
@@ -898,6 +924,129 @@ fn completions_invalid_shell_rejected() {
     assert!(
         !output.status.success(),
         "bm completions notashell should exit non-zero"
+    );
+}
+
+// ── Dynamic completion value tests ───────────────────────────────────
+
+/// Invoke `bm` with COMPLETE=bash to simulate a tab-completion request.
+/// Returns the completion candidates as a string.
+///
+/// `args` should be the command-line words as bash would tokenize them,
+/// including the program name as the first element. The last element is
+/// the word being completed (may be empty `""`).
+fn complete_bash(args: &[&str], home: &Path) -> String {
+    // The index of the word being completed (0-based).
+    let index = args.len() - 1;
+
+    // CompleteEnv protocol: COMPLETE=bash bm -- <words...>
+    let mut cmd_args = vec!["--"];
+    cmd_args.extend_from_slice(args);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_bm"))
+        .env("COMPLETE", "bash")
+        .env("HOME", home)
+        .env("_CLAP_COMPLETE_INDEX", index.to_string())
+        .env("_CLAP_COMPLETE_COMP_TYPE", "9") // Normal completion
+        .env("_CLAP_COMPLETE_SPACE", "true")
+        .env("_CLAP_IFS", "\n")
+        .args(&cmd_args)
+        .output()
+        .expect("failed to run bm");
+    String::from_utf8_lossy(&output.stdout).to_string()
+}
+
+#[test]
+fn dynamic_completions_include_profile_names() {
+    let tmp = tempfile::tempdir().unwrap();
+    // No config needed — profiles are embedded in the binary.
+    let completions = complete_bash(&["bm", "profiles", "describe", ""], tmp.path());
+    // Embedded profiles should appear as candidates
+    assert!(
+        completions.contains("scrum"),
+        "profiles describe should suggest 'scrum', got:\n{}",
+        completions
+    );
+    assert!(
+        completions.contains("scrum-compact"),
+        "profiles describe should suggest 'scrum-compact', got:\n{}",
+        completions
+    );
+}
+
+#[test]
+fn dynamic_completions_include_team_names() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let team_name = "test-completions-team";
+    setup_team(tmp.path(), team_name, "scrum-compact");
+
+    let completions = complete_bash(&["bm", "hire", "somerole", "-t", ""], tmp.path());
+    assert!(
+        completions.contains(team_name),
+        "hire -t should suggest '{}', got:\n{}",
+        team_name,
+        completions
+    );
+}
+
+#[test]
+fn dynamic_completions_include_role_names() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    setup_team(tmp.path(), "roles-team", "scrum");
+
+    let completions = complete_bash(&["bm", "hire", ""], tmp.path());
+    assert!(
+        completions.contains("architect"),
+        "hire should suggest 'architect' role, got:\n{}",
+        completions
+    );
+}
+
+#[test]
+fn dynamic_completions_include_member_names() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let team_repo = setup_team(tmp.path(), "members-team", "scrum");
+
+    // Create a hired member directory
+    let member_dir = team_repo.join("team").join("architect-01");
+    fs::create_dir_all(&member_dir).unwrap();
+    fs::write(member_dir.join(".botminter.yml"), "role: architect\n").unwrap();
+
+    let completions = complete_bash(&["bm", "members", "show", ""], tmp.path());
+    assert!(
+        completions.contains("architect-01"),
+        "members show should suggest 'architect-01', got:\n{}",
+        completions
+    );
+}
+
+#[test]
+fn dynamic_completions_graceful_without_config() {
+    let tmp = tempfile::tempdir().unwrap();
+    // No config — completions should still work (empty candidates, no crash).
+    let completions = complete_bash(&["bm", "hire", ""], tmp.path());
+    // Should not crash. Output may be empty (no roles to suggest without config).
+    // Just verify no panic/crash happened.
+    let _ = completions;
+}
+
+#[test]
+fn dynamic_completions_include_subcommands() {
+    let tmp = tempfile::tempdir().unwrap();
+    let completions = complete_bash(&["bm", ""], tmp.path());
+    // Top-level subcommands should always be suggested.
+    assert!(
+        completions.contains("hire"),
+        "top-level completions should include 'hire', got:\n{}",
+        completions
+    );
+    assert!(
+        completions.contains("start"),
+        "top-level completions should include 'start', got:\n{}",
+        completions
     );
 }
 

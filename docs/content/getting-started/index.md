@@ -130,6 +130,23 @@ workzone/
       ralph.yml                        # Copied from team repo
 ```
 
+## Shell completions (optional)
+
+Enable tab completions for commands, flags, team names, roles, and more:
+
+```bash
+# Bash
+echo 'eval "$(bm completions bash)"' >> ~/.bashrc
+
+# Zsh
+echo 'eval "$(bm completions zsh)"' >> ~/.zshrc
+
+# Fish
+bm completions fish > ~/.config/fish/completions/bm.fish
+```
+
+Completions are dynamic — they suggest real values from your configuration (team names, roles, members, profiles, etc.). See the [CLI Reference](../reference/cli.md#shell-completions) for all supported shells.
+
 ## Next steps
 
 - Read [The Agentic Workflow](../workflow.md) to see what day-to-day life looks like with a running team

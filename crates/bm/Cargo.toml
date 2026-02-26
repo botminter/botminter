@@ -8,7 +8,7 @@ repository = "https://github.com/devguyio/botminter"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-clap_complete = "4"
+clap_complete = { version = "4", features = ["unstable-dynamic"] }
 cliclack = "0.3"
 console = "0.15"
 indicatif = "0.17"
