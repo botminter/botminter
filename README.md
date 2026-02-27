@@ -1,46 +1,47 @@
 # BotMinter
 
-Lead your own Claude Code agents. Each team member is an independent [Ralph](https://github.com/mikeyobrien/ralph-orchestrator) orchestrator instance running in its own workspace. Members coordinate through GitHub issues on a shared team repo via the `gh` CLI — no central orchestrator.
+Lead your own Claude Code agents. Define a process, hire agents into roles, and let them work your codebase — picking up issues, opening PRs, and following your conventions. You design the workflow. You control the context.
 
 > [!WARNING]
 > **Pre-Alpha** — botminter is under active development and not yet ready for production use. Commands, configuration format, and behavior may change without notice between releases. See the [Roadmap](docs/content/roadmap.md) for current status.
 
 ```mermaid
 flowchart LR
-    Human((Human))
+    Human((You))
 
-    Human <-->|"HIL channel"| M1(Member A)
-    M1 <-->|"status labels"| board
+    Human <-->|"GitHub comments"| Agent(superman)
+    Agent <-->|"status transitions"| board
 
     subgraph repo["Team Repo (Control Plane)"]
-        board["issues"]
-        docs["PROCESS.md<br>knowledge<br>invariants"]
+        board["GitHub Issues\n+ Project Board"]
+        docs["PROCESS.md\nknowledge/\ninvariants/"]
     end
 
-    board <-->|"status labels"| M2([Member B])
-    board <-->|"status labels"| M3([Member C])
-    board <-->|"status labels"| M4([Member ...])
+    docs -.->|"shared context"| Agent
 
-    docs -.->|"shared context"| M1 & M2 & M3 & M4
+    subgraph workspace["Agent Workspace"]
+        Agent
+        fork["Project Fork"]
+    end
 ```
 
-> The diagram shows the generic coordination pattern. Specific roles (e.g., human-assistant, architect, dev) are defined by the **profile** you choose.
-
-## Prerequisites
-
-- [Ralph orchestrator](https://github.com/mikeyobrien/ralph-orchestrator) (for launching team members)
-- [gh CLI](https://cli.github.com/) (GitHub CLI for issue coordination)
-- Git
+> The diagram shows the `scrum-compact` profile — a single agent wearing all hats. The `scrum` profile distributes roles across multiple agents.
 
 ## Quick Start
 
-### 1. Install
+### 1. Prerequisites
+
+You need [Rust](https://rustup.rs/), [Claude Code](https://claude.ai/code), [Ralph orchestrator](https://github.com/mikeyobrien/ralph-orchestrator), [gh CLI](https://cli.github.com/), and Git. A GitHub token with `repo`, `project`, and `read:org` scopes is required.
+
+See the full [Prerequisites](https://botminter.github.io/botminter/getting-started/prerequisites/) guide for GitHub auth setup, token scopes, and recommended environment.
+
+### 2. Install
 
 ```bash
 cargo install --path crates/bm
 ```
 
-### 2. Create a team
+### 3. Create a team
 
 ```bash
 bm init
@@ -48,89 +49,99 @@ bm init
 
 The interactive wizard walks you through:
 - Team name and workzone directory
-- Profile selection (`scrum`, `scrum-compact`, `scrum-compact-telegram`)
+- Profile selection (`scrum-compact`, `scrum`, `scrum-compact-telegram`)
 - GitHub org/repo selection (auto-detects your auth)
-- Optional member hiring and project selection
+- Optional member hiring and project setup
 
-### 3. Hire a member and sync
-
-```bash
-bm hire human-assistant
-bm teams sync
-```
-
-### 4. Launch
+### 4. Hire, add a project, and sync
 
 ```bash
-bm start
-bm status
+bm hire superman                                          # Hire an agent
+bm projects add https://github.com/my-org/my-project-fork # Add your project fork
+bm teams sync --push                                      # Provision workspaces
+bm projects sync                                          # Set up Project board views
 ```
+
+Skip `bm hire` and `bm projects add` if you already did this during `bm init`.
+
+### 5. Launch
+
+```bash
+bm start     # Launch agents
+bm status    # Check status
+```
+
+See [Your First Journey](https://botminter.github.io/botminter/getting-started/first-journey/) for a complete walkthrough of creating your first epic, interacting at review gates, and watching the pipeline in action.
 
 ## How It Works
 
-### Profile-Based Generation
+### Profiles — conventions, not code
 
-| Layer | What It Contains |
-|-------|------------------|
-| **Profile** (`profiles/<name>/`) | Team process, role definitions, member skeletons, knowledge, invariants |
-| **Team repo instance** | Project-specific knowledge, hired members, runtime state |
+Profiles define a team methodology: roles, status pipelines, quality gates, knowledge structure. Think of it like Rails for web — baked-in conventions you can customize. `bm init` extracts a profile into a team repo that becomes your control plane.
 
-`bm init` extracts the selected profile into a new team repo, creates the GitHub remote, bootstraps labels and a Project board, and registers the team in your config.
+| Profile | What it is | Best for |
+|---------|-----------|----------|
+| `scrum-compact` | Single agent (`superman`) wearing all hats — PO, architect, dev, QE | Getting started, solo engineers |
+| `scrum-compact-telegram` | Same, but uses Telegram for real-time approval gates | Real-time notification flow |
+| `scrum` | Multiple specialized agents, one per role | Parallel execution across roles |
 
-### Runtime Model (Two Layers)
+```bash
+bm profiles list                    # See all profiles
+bm profiles describe scrum-compact  # Detailed profile info
+```
 
-- **Inner loop:** Each team member is a full Ralph instance with its own hats, memories, and workflow.
-- **Outer loop:** The team repo is the control plane. GitHub issues on the team repo are the coordination fabric. Members pull work by scanning for status labels matching their role via `gh issue list`.
+### Two-layer runtime
 
-### Workspace Layout
+- **Inner loop:** Each agent is a Claude Code instance orchestrated by Ralph — with its own hats, knowledge, and workflow.
+- **Outer loop:** The team repo is the control plane. GitHub issues and a Project board are the coordination fabric. Agents pull work by scanning for statuses matching their role.
+
+### Workspace layout
 
 ```
 workzone/
-  my-team/                           # Team directory
-    team/                            # Team repo (control plane)
-      team/human-assistant/          # Member config
-    human-assistant/                  # Member workspace
-      .botminter/                    # Clone of team repo
-      PROMPT.md → .botminter/...     # Symlinked from team repo
-      CLAUDE.md → .botminter/...     # Symlinked from team repo
-      ralph.yml                      # Copied from team repo
+  my-team/
+    team/                              # Team repo (control plane)
+      team/superman-01/                # Agent config
+      projects/my-project/             # Project-specific knowledge
+    superman-01/                       # Agent directory
+      my-project/                      # Project fork clone
+        .botminter/                    # Team repo clone
+        PROMPT.md → .botminter/...     # Symlinked from team repo
+        CLAUDE.md → .botminter/...
+        ralph.yml                      # Copied from team repo
 ```
 
-### GitHub Coordination
+### GitHub coordination
 
-Issues, milestones, and PRs live on the team repo's GitHub. Status transitions use a single-select Status field on the GitHub Project board, following the pattern `<role>:<phase>`. Members watch for statuses matching their role and hand off work by updating the Status field via the `gh` CLI. The specific roles and phases are defined by the profile.
-
-## Profiles
-
-Three profiles are available:
-
-| Profile | Description |
-|---------|-------------|
-| `scrum` | Multi-member scrum team with PO, architect, dev, QE roles. Epic-driven workflow with status tracking and rejection loops. |
-| `scrum-compact` | Single-agent "superman" profile. GitHub comment-based human review. |
-| `scrum-compact-telegram` | Same as scrum-compact but uses Telegram for blocking HIL approval gates. |
-
-```bash
-bm profiles list                # See all profiles
-bm profiles describe scrum      # Detailed profile info
-```
+Agents coordinate through GitHub issues on the team repo. Status transitions use a single-select Status field on the GitHub Project board, following the pattern `<role>:<phase>` (e.g., `po:triage`, `arch:design`, `dev:implement`). Issues are classified with labels (`kind/epic`, `kind/story`, `project/<name>`). Human review happens via issue comments — the agent posts a review request, you respond with `@bot Approved` or `@bot Rejected: <feedback>`.
 
 ## CLI Commands
 
 ```bash
 bm init                              # Interactive wizard — create a new team
-bm hire <role> [--name <n>] [-t team] # Hire a member into a role
-bm projects add <url> [-t team]       # Add a project to the team
+bm hire <role> [--name <n>] [-t team] # Hire an agent into a role
+bm projects add <url> [-t team]       # Add a project fork
+bm projects sync [-t team]            # Sync Project board and print view setup
 bm teams list                         # List registered teams
 bm teams sync [--push] [-t team]      # Provision and reconcile workspaces
-bm start [-t team]                    # Launch all members
-bm stop [-t team] [--force]           # Stop all members
+bm start [-t team]                    # Launch all agents
+bm stop [-t team] [--force]           # Stop all agents
 bm status [-t team] [-v]              # Status dashboard
-bm members list [-t team]             # List hired members
+bm members list [-t team]             # List hired agents
 bm roles list [-t team]               # List available roles
 bm profiles list                      # List embedded profiles
 bm profiles describe <profile>        # Show detailed profile information
 ```
+
+## Documentation
+
+Full documentation at **[botminter.github.io/botminter](https://botminter.github.io/botminter/)**:
+
+- [Prerequisites](https://botminter.github.io/botminter/getting-started/prerequisites/) — Tools, GitHub auth, recommended setup
+- [Getting Started](https://botminter.github.io/botminter/getting-started/) — Step-by-step team creation
+- [Your First Journey](https://botminter.github.io/botminter/getting-started/first-journey/) — End-to-end walkthrough
+- [Profiles](https://botminter.github.io/botminter/concepts/profiles/) — Available profiles and customization
+- [FAQ](https://botminter.github.io/botminter/faq/) — Common questions
 
 ## Project Structure
 
@@ -140,17 +151,14 @@ botminter/
 │   ├── src/                         # Source code
 │   └── tests/                       # Unit, integration, and E2E tests
 ├── profiles/
-│   ├── scrum/                       # Scrum profile
-│   ├── scrum-compact/               # Compact solo profile (GitHub HIL)
-│   └── scrum-compact-telegram/      # Compact solo profile (Telegram HIL)
+│   ├── scrum/                       # Multi-member scrum profile
+│   ├── scrum-compact/               # Solo profile (GitHub HIL)
+│   └── scrum-compact-telegram/      # Solo profile (Telegram HIL)
 ├── docs/                            # MkDocs documentation site
+├── specs/                           # Design artifacts and milestone plans
 ├── knowledge/                       # Development knowledge
 └── invariants/                      # Development invariants
 ```
-
-## Built on                                                                                                                                                                                   
-                                                                                                                                                                                                
-botminter uses [Ralph Orchestrator](https://github.com/mikeyobrien/ralph-orchestrator) as its agent runtime — each team member is an independent Ralph instance with its own hats, memories, and event loop.
 
 ## Development
 
