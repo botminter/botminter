@@ -1,225 +1,149 @@
-# Getting Started
+# Prerequisites
 
-This guide walks you through setting up your own Claude Code agents, hiring a member, and launching it. Familiarity with Git, GitHub, and command-line tools is assumed.
+Before setting up BotMinter, you need a few tools installed, a GitHub token with the right permissions, and a plan for where your repos will live.
 
-!!! warning "Pre-Alpha"
-    botminter is under active development. Commands, configuration format, and behavior may change without notice between releases. See the [Roadmap](../roadmap.md) for current status.
+## Tools
 
-!!! note
-    This guide uses the `scrum-compact` profile as an example — a single agent (role: `superman`) that wears multiple hats: product owner, architect, developer, QE, and more. The commands and workflow are the same for any profile — only the profile name and available roles differ. See [Profiles](../concepts/profiles.md) for available profiles.
+Install these before running `bm init`:
 
-## Prerequisites
+| Tool | Version | Install |
+|------|---------|---------|
+| **[Rust](https://rustup.rs/)** | stable | Required to build the `bm` CLI |
+| **bm** (BotMinter CLI) | latest | `cargo install --path crates/bm` |
+| **[Ralph orchestrator](https://github.com/mikeyobrien/ralph-orchestrator)** | latest | See the [Ralph repo](https://github.com/mikeyobrien/ralph-orchestrator) for install instructions |
+| **[Claude Code](https://claude.ai/code)** | latest | Requires an Anthropic API key or Claude Pro/Team subscription |
+| **[gh CLI](https://cli.github.com/)** | 2.x+ | GitHub CLI for repo and issue operations |
+| **Git** | 2.x+ | Your package manager |
 
-Make sure you've completed the [Prerequisites](prerequisites.md) setup — tools, recommended environment, Git and GitHub authentication — before proceeding.
+Ralph orchestrator is the runtime layer that manages agent lifecycle — it runs each team member as a Claude Code instance with structured hats, knowledge, and workflow controls.
 
-## Step 1: Create a team
+## Recommended setup
 
-Run the interactive wizard:
+Your BotMinter agents will run autonomously — cloning repos, pushing code, creating issues, and opening PRs. Because of this, it's worth taking a few minutes to set up a clean, isolated environment before you begin. This section covers three recommendations: a dedicated OS user, a dedicated GitHub org, and understanding where repos live.
 
-```bash
-bm init
-```
+### Dedicated user account
 
-The wizard walks you through the full setup:
+We recommend running your agents under a **separate user account** on Linux or macOS (e.g., a `BotMinter` user). Agents run with push access to GitHub repos and execute code autonomously — keeping them isolated from your personal account is a good security and hygiene practice.
 
-1. **Workzone directory** — where teams live (default: `~/.botminter/workspaces`)
-2. **Team name** — identifier for your team (e.g., `my-team`)
-3. **Profile** — team methodology (e.g., `scrum-compact`, `scrum`, `scrum-compact-telegram`)
-4. **GitHub integration** — auto-detects your `gh auth` session, validates the token, then lets you browse orgs and select or create a repo interactively
-5. **Project board** — select an existing GitHub Project board or create a new one
-6. **Telegram bot token** — optional, for Human-in-the-Loop notifications (required for `scrum-compact-telegram`, optional for others)
-7. **Members and projects** — optionally hire members and add project fork URLs right away
+- **Isolated credentials** — the agent's GitHub token and `gh` config are scoped to that user, not mixed with your personal credentials
+- **Clean environment** — no interference from your personal shell config, editor plugins, or other tools
+- **Easy cleanup** — remove the user account to cleanly remove all agent state
+- **Security boundary** — agents can't accidentally access your personal files or tokens
 
-### What `bm init` does
+=== "Linux"
 
-When the wizard completes, it has:
-
-- **Created (or cloned) a team repo** — the control plane with your profile's process conventions, knowledge structure, and role definitions
-- **Bootstrapped GitHub labels** — status labels matching the profile's workflow pipeline (e.g., `status/dev:in-progress`, `status/po:triage`)
-- **Created (or selected) a GitHub Project board** — for tracking issue status across roles
-- **Registered the team** in your local config (`~/.botminter/config.yml`)
-- **Hired members** (if you chose to during the wizard) — extracted member skeletons into the team repo
-- **Added projects** (if you chose to during the wizard) — registered project fork URLs in the team config
-
-Config is saved early so that if a GitHub operation fails, the team is still registered and recoverable. If any GitHub operation fails, the wizard stops with actionable error messages showing the exact `gh` commands to run manually.
-
-??? note "What gets created on disk"
-    ```
-    workzone/
-      my-team/
-        team/                           # Team repo (control plane, git repo)
-          botminter.yml                 # Profile manifest (roles, statuses, views)
-          PROCESS.md                    # Issue format, labels, communication protocols
-          CLAUDE.md                     # Team-wide agent context
-          knowledge/                    # Team-level knowledge files
-          invariants/                   # Team-level quality rules
-          agent/
-            skills/                     # Shared agent skills (gh CLI wrapper)
-          skills/                       # Profile-level skills (knowledge-manager, etc.)
-          formations/                   # Deployment targets (local, k8s)
-          projects/                     # Project-specific knowledge and invariants
-          team/                         # Member configurations (populated if you hired during init)
+    ```bash
+    sudo useradd -m -s /bin/bash BotMinter
+    sudo -u BotMinter -i
     ```
 
-## Step 2: Hire members and add projects
+=== "macOS"
 
-If you already hired members and added projects during `bm init`, skip to [Step 3](#step-3-provision-workspaces).
-
-### Hire a member
-
-Add a member to the team by specifying a role from the profile:
-
-```bash
-bm hire superman
-```
-
-This extracts the member skeleton from the embedded profile into the team repo — including its Ralph config, prompts, knowledge, and invariants. With the `scrum-compact` profile, the `superman` role is a single agent that wears all hats (PO, architect, developer, QE).
-
-You can optionally provide a name:
-
-```bash
-bm hire superman --name atlas
-```
-
-To see what roles are available in your profile:
-
-```bash
-bm roles list
-```
-
-### Add a project
-
-Register a project fork for your agents to work on:
-
-```bash
-bm projects add https://github.com/my-ai-team/my-project-fork
-```
-
-This tells botminter which codebase your agents will clone and work in. The URL should point to a fork of your project (see [Prerequisites — repo layout](prerequisites.md#understanding-the-repo-layout)).
-
-`bm projects add` also creates a `project/<name>` label on the team repo (e.g., `project/my-project-fork`). This label is how agents know which issues belong to which project.
-
-!!! tip "Tag your issues"
-    When creating issues on the team repo, make sure to apply the `project/<name>` label so agents can associate the work with the right codebase.
-
-## Step 3: Provision workspaces
-
-Once you have members hired and projects added, provision the workspaces:
-
-```bash
-bm teams sync --push
-```
-
-This is where the setup becomes real. `bm teams sync` does the following for each hired member:
-
-- **Pushes the team repo** to GitHub (with `--push`) so agents can coordinate via issues
-- **Creates a workspace directory** per member × project
-- **Clones the project fork** into the workspace
-- **Embeds the team repo** as `.botminter/` inside the workspace
-- **Surfaces configuration files** — symlinks `PROMPT.md` and `CLAUDE.md` from the team repo, copies `ralph.yml`
-- **Assembles `.claude/agents/`** — merges agent definitions from team, project, and member scopes via symlinks
-
-If you've already pushed the team repo, you can run `bm teams sync` without `--push`.
-
-## Step 4: Set up the Project board
-
-Sync the GitHub Project board's status columns with your profile and get instructions for creating role-based views:
-
-```bash
-bm projects sync
-```
-
-This updates the board's Status field options to match your profile's workflow stages, then prints step-by-step instructions for creating filtered views — one per role — so each agent sees only the statuses relevant to it.
-
-Example output for the `scrum-compact` profile:
-
-```
-✓ Status field synced (25 options)
-
-Your GitHub Project board needs role-based views so each role sees
-only its relevant statuses. Create one view per role listed below.
-
-Open the board: https://github.com/orgs/my-ai-team/projects/1
-
-For each view:
-  1. Click "+" next to the existing view tabs
-  2. Choose "Board" layout
-  3. Rename the tab to the view name below
-  4. Click the filter bar and paste the filter string
-  5. Click save
-  6. To create the next view, click the tab dropdown → Duplicate view, then repeat from step 3
-
-  View        Filter
-  ----        ------
-  PO          status:po:triage,po:backlog,po:design-review,po:plan-review,po:ready,po:accept,po:merge,done,error
-  Architect   status:arch:design,arch:plan,arch:breakdown,arch:in-progress,arch:sign-off,done,error
-  Developer   status:dev:ready,dev:implement,dev:code-review,done,error
-  QE          status:qe:test-design,qe:verify,done,error
-  Lead        status:lead:design-review,lead:plan-review,lead:breakdown-review,done,error
-  Specialist  status:sre:infra-setup,cw:write,cw:review,done,error
-```
-
-## Step 5: Launch
-
-Start all members:
-
-```bash
-bm start
-```
-
-Each member launches as a Claude Code instance orchestrated by Ralph, running in its own workspace with its own hats, knowledge, and workflow.
-
-Check status:
-
-```bash
-bm status
-```
-
-Inspect the team, its members, or configured projects:
-
-```bash
-bm teams show                    # Full team details: members, projects, config
-bm members show superman-01      # Member details: role, status, knowledge files
-bm projects list                 # List configured projects with fork URLs
-```
-
-??? note "Workspace layout after sync and launch"
-    ```
-    workzone/
-      my-team/                                   # Team directory
-        team/                                    # Team repo (control plane)
-          team/superman-01/                      # Member config
-          projects/my-project/                   # Project-specific dirs
-        superman-01/                             # Member directory
-          my-project/                            # Project fork clone (agent CWD)
-            .botminter/                          # Team repo clone
-            PROMPT.md → .botminter/...           # Symlinked from team repo
-            CLAUDE.md → .botminter/...           # Symlinked from team repo
-            ralph.yml                            # Copied from team repo
-            .claude/agents/                      # Assembled from team/project/member scopes
+    ```bash
+    sudo sysadminctl -addUser BotMinter -shell /bin/bash -home /Users/botminter
+    su - BotMinter
     ```
 
-## Shell completions (optional)
+All the steps below (GitHub auth, `bm init`, etc.) should be run as this user.
 
-Enable tab completions for commands, flags, team names, roles, and more:
+!!! warning "Containerized environments coming soon"
+    Support for running BotMinter agents in containerized or sandboxed environments is in active development. Stay tuned on the [Roadmap](../roadmap.md).
 
-```bash
-# Bash
-echo 'eval "$(bm completions bash)"' >> ~/.bashrc
+### Dedicated GitHub organization
 
-# Zsh
-echo 'eval "$(bm completions zsh)"' >> ~/.zshrc
+We recommend creating a **separate GitHub organization** for your BotMinter setup. Your agents will generate a lot of activity — issues, comments, label changes, PRs — and keeping that in a dedicated org prevents it from cluttering your personal or work repos.
 
-# Fish
-bm completions fish > ~/.config/fish/completions/bm.fish
+For example:
+
+```
+my-ai-team/                # Dedicated org
+  team-repo                # Created by bm init (control plane)
+  my-project-fork          # Fork of your existing project
 ```
 
-Completions are dynamic — they suggest real values from your configuration (team names, roles, members, profiles, etc.). See the [CLI Reference](../reference/cli.md#shell-completions) for all supported shells.
+Benefits:
 
-## Next steps
+- **Clean separation** — human work and agent work don't mix
+- **Scoped permissions** — scope the GitHub token to one org for tighter access control
+- **No noise** — agent activity (issues, PRs, comments) stays out of your main repos
+- **Portability** — easy to share with collaborators or archive later
 
-- Follow [Your First Journey](first-journey.md) to create your first epic, launch your agent, and see the full pipeline in action
-- Read [The Agentic Workflow](../workflow.md) to understand the philosophy behind the process
-- Read [Architecture](../concepts/architecture.md) to understand the profile-based generation model
-- Learn about the [Coordination Model](../concepts/coordination-model.md) and pull-based work discovery
-- See [CLI Reference](../reference/cli.md) for all available `bm` commands
+If you prefer to keep things under your personal account, that works too — `bm init` lets you choose any org or your personal account interactively.
+
+### Understanding the repo layout
+
+BotMinter works with two types of repos:
+
+**Team repo (created by BotMinter)** — This is the only repo BotMinter creates for you. It's the control plane — where your agents' configuration lives (roles, knowledge, process conventions, invariants). `bm init` sets this up automatically.
+
+- Agents coordinate through **GitHub issues** on this repo
+- Status tracking uses a **GitHub Project board** attached to this repo
+- The workflow pipeline is tracked via the Project board's Status field (e.g., `dev:in-progress`)
+
+**Project fork (your existing project)** — Your agents work on your existing codebase through a fork. You don't need to set up anything special — just have a fork of your project ready, and add it with `bm projects add <fork-url>`. Each agent gets a workspace with the fork cloned and the team repo embedded as the control plane.
+
+## Git and GitHub setup
+
+Agents use `gh` for GitHub operations (issues, labels, Project boards) and `git` for cloning and pushing repos. Both need to be authenticated with the same token, and both must work non-interactively — agents can't respond to login prompts.
+
+### 1. Create a Personal Access Token
+
+#### Classic PAT (recommended)
+
+Create a [classic PAT](https://github.com/settings/tokens/new) with these scopes:
+
+| Scope | Why it's needed |
+|-------|----------------|
+| `repo` | Create and manage repos, clone forks, read/write issues and PRs |
+| `project` | Create and manage GitHub Projects (v2) for status tracking |
+| `read:org` | List your GitHub organizations during `bm init` |
+
+#### Fine-grained PAT (alternative)
+
+If you prefer fine-grained tokens, create one at [Settings > Fine-grained tokens](https://github.com/settings/personal-access-tokens/new) with these permissions:
+
+| Permission | Access | Why |
+|-----------|--------|-----|
+| Administration | Read & Write | Create repos via `gh repo create` |
+| Contents | Read & Write | Clone, create, and push repos |
+| Issues | Read & Write | Create labels, read/write issues for coordination |
+| Pull requests | Read & Write | Open and manage PRs |
+| Projects | Admin | Create and configure GitHub Project boards |
+| Metadata | Read | Access repository and organization metadata |
+
+!!! tip
+    If you're using an org, make sure the token has access to that org. For fine-grained tokens, set the **resource owner** to the org.
+
+!!! note "Fine-grained PAT limitation"
+    Fine-grained tokens cannot list your GitHub organizations automatically. During `bm init`, the org selection step will only show your personal account — you'll need to type your org name manually when prompted. Classic PATs don't have this limitation.
+
+### 2. Authenticate `gh` and `git`
+
+Two things need authentication:
+
+- **`bm` and `gh` commands** — `bm init` detects your token automatically from the `GH_TOKEN` environment variable or `gh auth token`, and stores it in BotMinter's own config (`~/.botminter/config.yml`). All subsequent `gh` calls use this stored token. If no token is detected, `bm init` will prompt you to paste one interactively.
+- **`git clone` and `git push`** — During `bm teams sync`, plain `git` commands clone project forks. These need `gh` configured as a credential helper so `git` can authenticate with the same token.
+
+Save your token to a file and run:
+
+```bash
+# Authenticate gh and set HTTPS as the Git protocol
+gh auth login --with-token --git-protocol https < gh-token.txt
+
+# Wire up git to use gh as a credential helper (required for git clone/push)
+gh auth setup-git
+```
+
+Verify everything works:
+
+```bash
+gh auth status
+```
+
+You can delete `gh-token.txt` after login — the token is stored in `gh`'s config.
+
+`bm init` validates the token before proceeding — if it can't authenticate, the wizard will tell you.
+
+## Next step
+
+Once you have your environment set up and token configured, head to [Getting Started](index.md) to create your first team.

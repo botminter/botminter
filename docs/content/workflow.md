@@ -6,13 +6,13 @@ LLMs are powerful enough to design, plan, decompose, implement, and review softw
 
 The opposite extreme — treating LLMs as autocomplete and doing all the thinking yourself — wastes most of what they're good at.
 
-botminter takes a different approach: let agents do the building, but give yourself the right controls to shape *how* they build.
+BotMinter takes a different approach: let agents do the building, but give yourself the right controls to shape *how* they build.
 
 ## Your own agentic team
 
 Most agentic tools put you inside the AI's workflow. You sit in a terminal, watch an agent run sub-agents, and hope it gets things right. The AI is in control. You're the observer.
 
-botminter flips this. You build your own team of Claude Code agents that you work with the same way you work with any engineering team. You don't sit inside their tool. You coordinate through GitHub issues. You define the process, the workflow, and the constraints.
+BotMinter flips this. You build your own team of Claude Code agents that you work with the same way you work with any engineering team. You don't sit inside their tool. You coordinate through GitHub issues. You define the process, the workflow, and the constraints.
 
 ```mermaid
 flowchart TD
@@ -89,7 +89,7 @@ There are no standups. There are no syncs. The GitHub Project board *is* the sta
 ## How an idea becomes code
 
 !!! info "Profiles — not a hardcoded workflow"
-    botminter ships with **profiles** — reference implementations of team methodologies that define roles, pipeline stages, quality gates, and knowledge structure. Use the built-in profiles as-is, fork them, or create your own from scratch. Each profile's pipeline can be distributed however you want — spread across multiple agents, or collapsed into a single agent wearing many hats.
+    BotMinter ships with **profiles** — reference implementations of team methodologies that define roles, pipeline stages, quality gates, and knowledge structure. Use the built-in profiles as-is, fork them, or create your own from scratch. Each profile's pipeline can be distributed however you want — spread across multiple agents, or collapsed into a single agent wearing many hats.
 
 The following is an example of what a profile's pipeline looks like. Every feature follows a structured set of stages. The value is in the **forced decomposition**: each step produces a reviewable artifact before the next step begins.
 

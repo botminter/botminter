@@ -1,6 +1,6 @@
 # Architecture
 
-botminter's architecture has two fundamental models: a **profile-based generation model** that produces team repos, and a **two-layer runtime model** that governs how agents operate.
+BotMinter's architecture has two fundamental models: a **profile-based generation model** that produces team repos, and a **two-layer runtime model** that governs how agents operate.
 
 ## Profile-based generation model
 

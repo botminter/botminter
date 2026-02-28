@@ -1,9 +1,9 @@
 # Roadmap
 
-botminter is developed through incremental milestones. Each milestone builds on the previous one, adding features to the CLI and validating them with synthetic test tasks before operational use.
+BotMinter is developed through incremental milestones. Each milestone builds on the previous one, adding features to the CLI and validating them with synthetic test tasks before operational use.
 
 !!! warning "Pre-Alpha"
-    botminter is under active development and not yet ready for production use. The information on this page reflects the current plan and is subject to change.
+    BotMinter is under active development and not yet ready for production use. The information on this page reflects the current plan and is subject to change.
 
 ## Overview
 

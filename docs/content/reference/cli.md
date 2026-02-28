@@ -1,6 +1,6 @@
 # CLI Commands
 
-All botminter operations use the `bm` CLI binary. Install it with `cargo install --path crates/bm` or build with `cargo build -p bm`.
+All BotMinter operations use the `bm` CLI binary. Install it with `cargo install --path crates/bm` or build with `cargo build -p bm`.
 
 ## Team creation
 
@@ -498,7 +498,7 @@ The generated script delegates to the `bm` binary at tab-time, so completions al
 
 ## Development commands
 
-These are in the root Justfile for developing botminter itself:
+These are in the root Justfile for developing BotMinter itself:
 
 ```bash
 just build    # cargo build -p bm

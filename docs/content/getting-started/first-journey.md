@@ -1,6 +1,6 @@
 # Your First Journey
 
-You've completed the [Getting Started](index.md) guide — your team is set up, workspaces are provisioned, and the board is ready. This page walks you through your first end-to-end experience: creating an epic, launching your agent, watching it work, and reviewing its output.
+You've completed the [Bootstrap Your Team](bootstrap-your-team.md) guide — your team is set up, workspaces are provisioned, and the board is ready. This page walks you through your first end-to-end experience: creating an epic, launching your agent, watching it work, and reviewing its output.
 
 We'll use the `scrum-compact` profile with a single `superman` agent working on a project called `my-project`.
 

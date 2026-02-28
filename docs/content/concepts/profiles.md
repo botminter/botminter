@@ -20,7 +20,7 @@ Think of profiles as convention packages. The value is in the baked-in conventio
 
 ## Available profiles
 
-botminter ships with three profiles. Each runs Claude Code agents orchestrated by Ralph — they differ in how many agents you run and how human approval works.
+BotMinter ships with three profiles. Each runs Claude Code agents orchestrated by Ralph — they differ in how many agents you run and how human approval works.
 
 ### `scrum-compact` (recommended starting point)
 

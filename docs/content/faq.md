@@ -1,8 +1,8 @@
 # FAQ
 
-## Does botminter only work with Claude Code?
+## Does BotMinter only work with Claude Code?
 
-Claude Code is the primary supported runtime today. Under the hood, botminter uses a pluggable runtime layer — currently powered by [Ralph orchestrator](https://github.com/mikeyobrien/ralph-orchestrator). We're working on making it easy to plug in custom runtimes as well.
+Claude Code is the primary supported runtime today. Under the hood, BotMinter uses a pluggable runtime layer — currently powered by [Ralph orchestrator](https://github.com/mikeyobrien/ralph-orchestrator). We're working on making it easy to plug in custom runtimes as well.
 
 ## Do I need multiple agents running in parallel?
 
@@ -10,11 +10,11 @@ Not at all. It depends on the profile you choose. The `scrum-compact` profile ru
 
 ## Is this only for Scrum teams?
 
-No. botminter focuses on **conventions**, not a specific methodology. It ships with opinionated defaults (like the Scrum profile), but profiles are fully customizable. Think of it like Rails for web or Spring for enterprise — baked-in conventions that you can tweak to fit your process. You can fork an existing profile or create one from scratch.
+No. BotMinter focuses on **conventions**, not a specific methodology. It ships with opinionated defaults (like the Scrum profile), but profiles are fully customizable. Think of it like Rails for web or Spring for enterprise — baked-in conventions that you can tweak to fit your process. You can fork an existing profile or create one from scratch.
 
-## What's the difference between botminter and just using Claude Code?
+## What's the difference between BotMinter and just using Claude Code?
 
-Claude Code is a powerful single-agent tool. botminter adds structured conventions on top: layered knowledge scoping (team → project → member), process enforcement via status gates, cumulative learning through knowledge files, and a coordination fabric via GitHub issues. The value isn't in the runtime — it's in the conventions that make your investment in one agent carry forward to every other agent you run.
+Claude Code is a powerful single-agent tool. BotMinter adds structured conventions on top: layered knowledge scoping (team → project → member), process enforcement via status gates, cumulative learning through knowledge files, and a coordination fabric via GitHub issues. The value isn't in the runtime — it's in the conventions that make your investment in one agent carry forward to every other agent you run.
 
 ## What is a "profile"?
 

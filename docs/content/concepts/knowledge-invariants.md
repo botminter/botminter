@@ -1,6 +1,6 @@
 # Knowledge & Invariants
 
-botminter uses a three-tier model for guiding and constraining agent behavior: **knowledge**, **invariants**, and **backpressure**. All three follow a recursive scoping model where more specific levels extend (never replace) more general ones.
+BotMinter uses a three-tier model for guiding and constraining agent behavior: **knowledge**, **invariants**, and **backpressure**. All three follow a recursive scoping model where more specific levels extend (never replace) more general ones.
 
 ## Knowledge
 

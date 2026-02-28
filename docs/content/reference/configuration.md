@@ -227,7 +227,7 @@ type: k8s
 k8s:
   context: prod-cluster
   image: botminter/team:latest
-  namespace_prefix: botminter
+  namespace_prefix: BotMinter
 manager:
   ralph_yml: manager/ralph.yml
   prompt: manager/PROMPT.md

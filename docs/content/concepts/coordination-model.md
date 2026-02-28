@@ -1,6 +1,6 @@
 # Coordination Model
 
-botminter teams use a **pull-based coordination model**. There is no central dispatcher. Each member independently scans the board for work matching its role, processes it, and hands off to the next member by updating the issue's status label.
+BotMinter teams use a **pull-based coordination model**. There is no central dispatcher. Each member independently scans the board for work matching its role, processes it, and hands off to the next member by updating the issue's status label.
 
 ## Pull-based work discovery
 

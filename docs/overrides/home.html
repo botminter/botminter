@@ -1,5 +1,18 @@
 {% extends "main.html" %}
 
+{% block htmltitle %}
+  <title>BotMinter — Lead your own Claude Code agents</title>
+{% endblock %}
+
+{% block extrahead %}
+  {{ super() }}
+  <meta property="og:title" content="BotMinter">
+  <meta property="og:description" content="Lead your own Claude Code agents">
+  <meta property="og:image" content="https://www.botminter.ai/assets/og-preview.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+{% endblock %}
+
 {% block styles %}
   {{ super() }}
   <style>
@@ -63,32 +76,40 @@
   {{ super() }}
 
   <div style="background:#5c3d00;color:#ffcc80;text-align:center;padding:0.6rem 1rem;font-size:0.85rem;border-bottom:1px solid #7a5200;">
-    <strong>Pre-Alpha</strong> — botminter is under active development. Expect breaking changes.
+    <strong>Pre-Alpha</strong> — BotMinter is under active development. Expect breaking changes.
     <a href="roadmap/" style="color:#ffcc80;text-decoration:underline;margin-left:0.3rem;">Roadmap</a>
   </div>
 
   <section class="bm-hero">
     <div class="bm-hero__inner">
-      <div class="bm-hero__badge">Open Source</div>
-      <h1 class="bm-hero__title">
-        Mint your<br>
-        <span class="bm-hero__accent">Claude Code agents.</span>
-      </h1>
-      <p class="bm-hero__subtitle">
-        Work with Claude Code agents the way you work with any engineering team &mdash;
-        they pick up issues, open PRs, and follow your process.<br><br>
-        You design the workflow. You control the context.
-      </p>
-      <p class="bm-hero__note">
-        Conventions that scale seamlessly from solo to org-wide.
-      </p>
-      <div class="bm-hero__actions">
-        <a href="getting-started/" class="md-button md-button--primary bm-btn">
-          Get Started
-        </a>
-        <a href="workflow/" class="md-button bm-btn bm-btn--outline">
-          How it works
-        </a>
+      <div class="bm-hero__top">
+        <div class="bm-hero__logo-col">
+          <img src="assets/logo-full-light.png" alt="BotMinter" class="bm-hero__logo bm-hero__logo--light">
+          <img src="assets/logo-full-dark.png" alt="BotMinter" class="bm-hero__logo bm-hero__logo--dark">
+        </div>
+        <div class="bm-hero__content">
+          <h1 class="bm-hero__title">
+            Mint your<br>
+            <span class="bm-hero__accent">Claude Code agents.</span>
+          </h1>
+          <p class="bm-hero__subtitle">
+            Work with Claude Code agents the way you work with any engineering team.
+          </p>
+          <p class="bm-hero__subtitle">
+            They pick up issues, open PRs, and follow your process.
+          </p>
+          <p class="bm-hero__subtitle">
+            You design the workflow. You control the context.
+          </p>
+          <div class="bm-hero__actions">
+            <a href="getting-started/" class="md-button md-button--primary bm-btn">
+              Get Started
+            </a>
+            <a href="workflow/" class="md-button bm-btn bm-btn--outline">
+              How it works
+            </a>
+          </div>
+        </div>
       </div>
       <div class="bm-hero__showcase">
         <div class="bm-gh">
@@ -279,7 +300,7 @@
     <div class="bm-how__inner">
       <h2 class="bm-section__title">Three layers, one command</h2>
       <p class="bm-section__subtitle">
-        botminter separates concerns into generator, profile, and instance.
+        BotMinter separates concerns into generator, profile, and instance.
       </p>
       <div class="bm-how__grid">
         <div class="bm-how__step">
@@ -307,14 +328,14 @@
     <div class="bm-faq__inner">
       <h2 class="bm-section__title">Frequently asked questions</h2>
       <p class="bm-section__subtitle">
-        Common questions about botminter.
+        Common questions about BotMinter.
       </p>
       <div class="bm-faq__grid">
 
         <div class="bm-faq__item">
-          <h3 class="bm-faq__question">Does botminter only work with Claude Code?</h3>
+          <h3 class="bm-faq__question">Does BotMinter only work with Claude Code?</h3>
           <p class="bm-faq__answer">
-            Claude Code is the primary supported runtime today. Under the hood, botminter uses a pluggable
+            Claude Code is the primary supported runtime today. Under the hood, BotMinter uses a pluggable
             runtime layer &mdash; currently powered by
             <a href="https://github.com/mikeyobrien/ralph-orchestrator">Ralph orchestrator</a>.
             We&rsquo;re working on making it easy to plug in custom runtimes as well.
@@ -334,7 +355,7 @@
         <div class="bm-faq__item">
           <h3 class="bm-faq__question">Is this only for Scrum teams?</h3>
           <p class="bm-faq__answer">
-            No. botminter focuses on <strong>conventions</strong>, not a specific methodology.
+            No. BotMinter focuses on <strong>conventions</strong>, not a specific methodology.
             It ships with opinionated defaults (like the Scrum profile), but profiles are fully customizable.
             Think of it like Rails for web or Spring for enterprise &mdash; baked-in conventions
             that you can tweak to fit your process. You can fork an existing profile or create one from scratch.

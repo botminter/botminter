@@ -1,9 +1,15 @@
-# BotMinter
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme-banner-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/readme-banner-light.png">
+    <img alt="BotMinter" src="assets/readme-banner-light.png" width="400">
+  </picture>
+</p>
 
-Lead your own Claude Code agents. Define a process, hire agents into roles, and let them work your codebase — picking up issues, opening PRs, and following your conventions. You design the workflow. You control the context.
+Lead your own Claude Code agents. Define a process, hire agents into roles, and let them work your codebase. They pick up issues, open PRs, and follow your conventions. You design the workflow. You control the context.
 
 > [!WARNING]
-> **Pre-Alpha** — botminter is under active development and not yet ready for production use. Commands, configuration format, and behavior may change without notice between releases. See the [Roadmap](docs/content/roadmap.md) for current status.
+> **Pre-Alpha** - BotMinter is under active development and not yet ready for production use. Commands, configuration format, and behavior may change without notice between releases. See the [Roadmap](docs/content/roadmap.md) for current status.
 
 ```mermaid
 flowchart TD
@@ -64,13 +70,13 @@ See [Your First Journey](https://botminter.github.io/botminter/getting-started/f
 
 ## How It Works
 
-### Profiles — conventions, not code
+### Profiles - conventions, not code
 
-Profiles define a team methodology: roles, status pipelines, quality gates, knowledge structure. Think of it like Rails for web — baked-in conventions you can customize. `bm init` extracts a profile into a team repo that becomes your control plane.
+Profiles define a team methodology: roles, status pipelines, quality gates, knowledge structure. Think of it like Rails for web - baked-in conventions you can customize. `bm init` extracts a profile into a team repo that becomes your control plane.
 
 | Profile | What it is | Best for |
 |---------|-----------|----------|
-| `scrum-compact` | Single agent (`superman`) wearing all hats — PO, architect, dev, QE | Getting started, solo engineers |
+| `scrum-compact` | Single agent (`superman`) wearing all hats - PO, architect, dev, QE | Getting started, solo engineers |
 | `scrum-compact-telegram` | Same, but uses Telegram for real-time approval gates | Real-time notification flow |
 | `scrum` | Multiple specialized agents, one per role | Parallel execution across roles |
 
@@ -81,7 +87,7 @@ bm profiles describe scrum-compact  # Detailed profile info
 
 ### Two-layer runtime
 
-- **Inner loop:** Each agent is a Claude Code instance orchestrated by Ralph — with its own hats, knowledge, and workflow.
+- **Inner loop:** Each agent is a Claude Code instance orchestrated by Ralph - with its own hats, knowledge, and workflow.
 - **Outer loop:** The team repo is the control plane. GitHub issues and a Project board are the coordination fabric. Agents pull work by scanning for statuses matching their role.
 
 ### Workspace layout
@@ -102,12 +108,12 @@ workzone/
 
 ### GitHub coordination
 
-Agents coordinate through GitHub issues on the team repo. Status transitions use a single-select Status field on the GitHub Project board, following the pattern `<role>:<phase>` (e.g., `po:triage`, `arch:design`, `dev:implement`). Issues are classified with labels (`kind/epic`, `kind/story`, `project/<name>`). Human review happens via issue comments — the agent posts a review request, you respond with `@bot Approved` or `@bot Rejected: <feedback>`.
+Agents coordinate through GitHub issues on the team repo. Status transitions use a single-select Status field on the GitHub Project board, following the pattern `<role>:<phase>` (e.g., `po:triage`, `arch:design`, `dev:implement`). Issues are classified with labels (`kind/epic`, `kind/story`, `project/<name>`). Human review happens via issue comments - the agent posts a review request, you respond with `@bot Approved` or `@bot Rejected: <feedback>`.
 
 ## CLI Commands
 
 ```bash
-bm init                              # Interactive wizard — create a new team
+bm init                              # Interactive wizard - create a new team
 bm hire <role> [--name <n>] [-t team] # Hire an agent into a role
 bm projects add <url> [-t team]       # Add a project fork
 bm projects sync [-t team]            # Sync Project board and print view setup
@@ -126,11 +132,11 @@ bm profiles describe <profile>        # Show detailed profile information
 
 Full documentation at **[botminter.github.io/botminter](https://botminter.github.io/botminter/)**:
 
-- [Prerequisites](https://botminter.github.io/botminter/getting-started/prerequisites/) — Tools, GitHub auth, recommended setup
-- [Getting Started](https://botminter.github.io/botminter/getting-started/) — Step-by-step team creation
-- [Your First Journey](https://botminter.github.io/botminter/getting-started/first-journey/) — End-to-end walkthrough
-- [Profiles](https://botminter.github.io/botminter/concepts/profiles/) — Available profiles and customization
-- [FAQ](https://botminter.github.io/botminter/faq/) — Common questions
+- [Prerequisites](https://botminter.github.io/botminter/getting-started/prerequisites/) - Tools, GitHub auth, recommended setup
+- [Getting Started](https://botminter.github.io/botminter/getting-started/) - Step-by-step team creation
+- [Your First Journey](https://botminter.github.io/botminter/getting-started/first-journey/) - End-to-end walkthrough
+- [Profiles](https://botminter.github.io/botminter/concepts/profiles/) - Available profiles and customization
+- [FAQ](https://botminter.github.io/botminter/faq/) - Common questions
 
 ## Project Structure
 
@@ -159,4 +165,4 @@ just clippy   # cargo clippy -p bm -- -D warnings
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0 - see [LICENSE](LICENSE).
