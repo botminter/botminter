@@ -26,7 +26,7 @@ key-files:
     - .planning/specs/README.md
     - .planning/specs/meta-spec.md
   modified:
-    - CLAUDE.md
+    - AGENTS.md
 
 key-decisions:
   - "MADR 4.0.0 adopted with 4-digit zero-padded numbering in .planning/adrs/"
@@ -59,7 +59,7 @@ completed: 2026-03-08
 ## Accomplishments
 - Established ADR practice with MADR 4.0.0 template and 3 accepted ADRs documenting key architectural decisions
 - Created specs practice with meta-spec defining when/how to write specifications using RFC 2119 conformance language
-- Removed legacy specs/ directory contents (preserved in git history) and updated all CLAUDE.md references
+- Removed legacy specs/ directory contents (preserved in git history) and updated all AGENTS.md references
 
 ## Task Commits
 
@@ -76,7 +76,7 @@ Each task was committed atomically:
 - `.planning/adrs/0003-ralph-robot-backend.md` - Ralph robot backend credential mapping
 - `.planning/specs/README.md` - Spec index listing bridge spec (draft)
 - `.planning/specs/meta-spec.md` - Spec discipline definition with RFC 2119 rules
-- `CLAUDE.md` - Updated references from removed specs/ to .planning/adrs/ and .planning/specs/
+- `AGENTS.md` - Updated references from removed specs/ to .planning/adrs/ and .planning/specs/
 
 ## Decisions Made
 - MADR 4.0.0 chosen over Nygard-style, Y-statements, or no formal practice
@@ -90,10 +90,10 @@ Each task was committed atomically:
 
 **1. [Rule 3 - Blocking] Parallel agent completed Task 2 specs/cleanup work**
 - **Found during:** Task 2 (specs practice and cleanup)
-- **Issue:** Plan 07-02 parallel agent already created .planning/specs/README.md, meta-spec.md, updated CLAUDE.md, and removed legacy specs/ contents
+- **Issue:** Plan 07-02 parallel agent already created .planning/specs/README.md, meta-spec.md, updated AGENTS.md, and removed legacy specs/ contents
 - **Fix:** Verified the parallel agent's work satisfies all Task 2 requirements; no duplicate commit needed
-- **Files affected:** .planning/specs/README.md, .planning/specs/meta-spec.md, CLAUDE.md, specs/
-- **Verification:** All must-have artifacts present, no stale references in CLAUDE.md
+- **Files affected:** .planning/specs/README.md, .planning/specs/meta-spec.md, AGENTS.md, specs/
+- **Verification:** All must-have artifacts present, no stale references in AGENTS.md
 
 ---
 

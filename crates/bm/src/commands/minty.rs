@@ -22,7 +22,7 @@ pub fn run(team_flag: Option<&str>) -> Result<()> {
         );
     }
 
-    let binary = resolve_coding_agent(team_flag)?;
+    let agent_def = resolve_coding_agent(team_flag)?;
 
     if team_flag.is_none() && config::load().is_err() {
         eprintln!(
@@ -34,17 +34,22 @@ pub fn run(team_flag: Option<&str>) -> Result<()> {
 
     // Launch coding agent via exec (replaces this process)
     use std::os::unix::process::CommandExt;
-    let err = std::process::Command::new(&binary)
-        .current_dir(&minty_dir)
-        .arg("--append-system-prompt-file")
-        .arg(&prompt_path)
-        .exec();
+    let mut cmd = std::process::Command::new(&agent_def.binary);
+    cmd.current_dir(&minty_dir);
+    if agent_def.binary == "gemini" {
+        let content = fs::read_to_string(&prompt_path)
+            .context("Failed to read prompt.md")?;
+        cmd.arg("--instruction").arg(content);
+    } else {
+        cmd.arg("--append-system-prompt-file").arg(&prompt_path);
+    }
+    let err = cmd.exec();
 
-    bail!("Failed to launch {}: {}", binary, err);
+    bail!("Failed to launch {}: {}", agent_def.binary, err);
 }
 
 /// Resolves the coding agent binary name from team config or profile defaults.
-fn resolve_coding_agent(team_flag: Option<&str>) -> Result<String> {
+fn resolve_coding_agent(team_flag: Option<&str>) -> Result<crate::profile::CodingAgentDef> {
     if let Some(team_name) = team_flag {
         let cfg = config::load()?;
         let team = config::resolve_team(&cfg, Some(team_name))?;
@@ -53,11 +58,11 @@ fn resolve_coding_agent(team_flag: Option<&str>) -> Result<String> {
             .context("Failed to read team botminter.yml")?;
         let manifest: profile::ProfileManifest =
             serde_yml::from_str(&contents).context("Failed to parse team botminter.yml")?;
-        let agent = profile::resolve_coding_agent(team, &manifest)?;
-        Ok(agent.binary.clone())
+        let agent = profile::resolve_coding_agent(&team, &manifest)?;
+        Ok(agent.clone())
     } else {
         super::ensure_profiles(false)?;
-        profile::resolve_agent_from_profiles()
+        profile::resolve_agent_def_from_profiles()
     }
 }
 

@@ -30,7 +30,7 @@ workzone/
           README.md
           pyproject.toml
       PROMPT.md                      # Copied from team/members/superman-01/
-      CLAUDE.md                      # Copied from team/members/superman-01/
+      AGENTS.md                      # Copied from team/members/superman-01/
       ralph.yml                      # Copied from team/members/superman-01/
       .botminter.workspace           # Workspace marker file
 ```

@@ -106,7 +106,7 @@ Architectural practice is evolving: v0.07 introduces ADRs for decision tracking 
 | Config-driven coding agent mapping with profile/team override | Pluggable architecture without premature multi-agent support | Good |
 | Inline agent tags (`+agent:NAME/-agent`) for file sections | Unified files with inline markers vs separate file variants per agent | Good |
 | Profiles on disk at `~/.config/botminter/profiles/` | Editable/customizable without rebuilding binary; separated from runtime data | Good |
-| Workspace repos as GitHub-hosted git repos with submodules | Clean separation, no nested CLAUDE.md confusion, multi-project support | Good |
+| Workspace repos as GitHub-hosted git repos with submodules | Clean separation, no nested AGENTS.md confusion, multi-project support | Good |
 | Skills as composable building blocks for roles and Minty | Shared delivery mechanism for team-level and BotMinter-level interactions | Good |
 | Closure DI pattern for test isolation (session.rs, E2E) | Avoids env::set_var race conditions; explicit dependency injection | Good |
 | libtest-mimic custom harness for E2E tests | Mandatory CLI args (--gh-token, --gh-org) without env var fragility | Good |

@@ -12,7 +12,7 @@ The "Coding Agents" section in `bm profiles describe` output is functional but c
 
 ```
 Coding Agents (1):
-  claude-code (default)     Claude Code — context: CLAUDE.md, dir: .claude, binary: claude
+  claude-code (default)     Claude Code — context: AGENTS.md, dir: .claude, binary: claude
 ```
 
 Internal details like `binary: claude` are exposed to end users who don't need them. The formatting is dense and could benefit from better grouping or progressive disclosure (e.g., hide binary/dir details unless `--verbose` is passed).

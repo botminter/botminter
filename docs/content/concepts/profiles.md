@@ -101,7 +101,7 @@ coding_agents:
   claude-code:
     name: claude-code
     display_name: "Claude Code"
-    context_file: "CLAUDE.md"
+    context_file: "AGENTS.md"
     agent_dir: ".claude"
     binary: "claude"
 
@@ -112,15 +112,15 @@ Each coding agent definition specifies:
 
 | Field | Purpose | Example |
 |-------|---------|---------|
-| `context_file` | Name of the context file the agent reads at startup | `CLAUDE.md` |
+| `context_file` | Name of the context file the agent reads at startup | `AGENTS.md` |
 | `agent_dir` | Agent-specific config directory in the workspace | `.claude` |
 | `binary` | Binary name used to launch the agent | `claude` |
 
 ### How it works
 
-Profile source files use **agent-neutral names**: `context.md` instead of `CLAUDE.md`, and `coding-agent/` instead of `.claude/`. During extraction (`bm init`, `bm hire`), the CLI:
+Profile source files use **agent-neutral names**: `context.md` instead of `AGENTS.md`, and `coding-agent/` instead of `.claude/`. During extraction (`bm init`, `bm hire`), the CLI:
 
-1. **Renames** `context.md` → the agent's `context_file` (e.g., `CLAUDE.md`)
+1. **Renames** `context.md` → the agent's `context_file` (e.g., `AGENTS.md`)
 2. **Filters** inline agent tags — agent-specific sections marked with `<!-- +agent:NAME -->` / `<!-- -agent -->` tags are included or excluded based on the resolved agent
 
 This means profiles can contain content for multiple coding agents in a single file. Use `bm profiles describe --show-tags` to see which files contain agent-specific sections.

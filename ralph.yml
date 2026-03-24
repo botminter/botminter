@@ -44,7 +44,7 @@ hats:
          - Search for similar patterns in the codebase
          - **MANDATORY: Read every file in `invariants/`.** These are hard constraints. You MUST comply with all invariants that apply to the areas you touch. Violating an invariant is a build failure.
          - Check `knowledge/` for relevant developer guidance
-         - Read `CLAUDE.md` for project conventions
+         - Read `AGENTS.md` for project conventions
 
       2. **PLAN** — Think before coding
          - Outline the specific changes needed

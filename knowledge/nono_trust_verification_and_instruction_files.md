@@ -1,6 +1,6 @@
 # Nono: Trust Verification & Instruction File Signing
 
-> How nono verifies instruction files (CLAUDE.md, SKILLS.md, etc.) before letting an AI agent read them, and the full signing workflow to make it work.
+> How nono verifies instruction files (AGENTS.md, SKILLS.md, etc.) before letting an AI agent read them, and the full signing workflow to make it work.
 
 ## TL;DR
 
@@ -24,14 +24,14 @@ When no `trust-policy.json` exists anywhere (no project-level, no user-level), n
 
 This means:
 
-1. Any `CLAUDE.md` in your project root gets detected
+1. Any `AGENTS.md` in your project root gets detected
 2. No publishers are trusted (empty list)
 3. No `.bundle` file exists next to it
 4. Outcome: `Unsigned` + `enforcement=deny` = **hard block**
 
 ```
   Scanning 1 instruction file(s) for trust verification...
-    FAIL CLAUDE.md (no .bundle file)
+    FAIL AGENTS.md (no .bundle file)
 
   Trust scan: 0 verified, 1 blocked, 0 warned
   Aborting: instruction files failed trust verification (enforcement=deny).
@@ -131,22 +131,22 @@ However, during `nono trust verify` and `nono trust list`, unsigned policies onl
 
 ```bash
 # Sign a specific file
-nono trust sign CLAUDE.md
+nono trust sign AGENTS.md
 
 # Sign all files matching the policy patterns in CWD
 nono trust sign --all
 
 # Sign with a specific key
-nono trust sign CLAUDE.md --key my-signing-key
+nono trust sign AGENTS.md --key my-signing-key
 ```
 
-Each signed file gets a `.bundle` sidecar (e.g., `CLAUDE.md.bundle`).
+Each signed file gets a `.bundle` sidecar (e.g., `AGENTS.md.bundle`).
 
 ### Step 5: Verify (optional, for checking)
 
 ```bash
 # Verify specific files
-nono trust verify CLAUDE.md
+nono trust verify AGENTS.md
 
 # Verify all instruction files in CWD
 nono trust verify --all
@@ -163,15 +163,15 @@ nono trust list
 
 This means:
 - You need to `cd` into each project and run `nono trust sign --all`
-- If a `CLAUDE.md` changes, the bundle becomes stale (digest mismatch) and must be re-signed
-- For projects where `CLAUDE.md` changes frequently, this is ongoing maintenance
+- If a `AGENTS.md` changes, the bundle becomes stale (digest mismatch) and must be re-signed
+- For projects where `AGENTS.md` changes frequently, this is ongoing maintenance
 
 ### Keyless signing (CI/CD)
 
 For GitHub Actions or other CI environments with OIDC support:
 
 ```bash
-nono trust sign --keyless CLAUDE.md
+nono trust sign --keyless AGENTS.md
 ```
 
 This uses Sigstore's Fulcio + Rekor for keyless signing via ambient OIDC credentials. Requires `permissions: id-token: write` in GitHub Actions.
@@ -222,8 +222,8 @@ This is by design — a project shouldn't be able to declare itself trusted with
 Bundle files follow Sigstore bundle v0.3 JSON format:
 
 ```
-CLAUDE.md          <- the instruction file
-CLAUDE.md.bundle   <- the sidecar bundle
+AGENTS.md          <- the instruction file
+AGENTS.md.bundle   <- the sidecar bundle
 ```
 
 A bundle contains:
@@ -262,7 +262,7 @@ On macOS, nono injects Seatbelt profile rules for instruction file protection:
 - **Allow overrides**: Literal path allows for files that passed verification
 - Generated for both original and canonical paths (macOS symlink handling)
 
-This means even if the agent process tries to read an unverified `CLAUDE.md` directly, the OS kernel blocks it.
+This means even if the agent process tries to read an unverified `AGENTS.md` directly, the OS kernel blocks it.
 
 On Linux (Landlock), this OS-level instruction file deny is not available — Landlock is strictly allow-list and cannot express "deny this specific file within an allowed directory."
 
@@ -286,7 +286,7 @@ On Linux (Landlock), this OS-level instruction file deny is not available — La
 ```
 Do you control the instruction files?
   |
-  +-- Yes, I author my own CLAUDE.md
+  +-- Yes, I author my own AGENTS.md
   |     |
   |     +-- Is this a personal dev environment?
   |     |     -> Use --trust-override. Signing your own files
@@ -307,9 +307,9 @@ Do you control the instruction files?
 
 | Issue | Why It Happens |
 |-------|---------------|
-| `FAIL CLAUDE.md (no .bundle file)` on first run | Default policy has `enforcement=deny` and no publishers. Use `--trust-override` or set up signing. |
+| `FAIL AGENTS.md (no .bundle file)` on first run | Default policy has `enforcement=deny` and no publishers. Use `--trust-override` or set up signing. |
 | Can't create `trust-policy.json` without signing it | The pre-exec scan requires policy signatures. You can't bootstrap with an unsigned policy unless you use `--trust-override`. |
-| Bundle becomes stale after editing `CLAUDE.md` | Digest mismatch. Re-sign with `nono trust sign CLAUDE.md`. |
+| Bundle becomes stale after editing `AGENTS.md` | Digest mismatch. Re-sign with `nono trust sign AGENTS.md`. |
 | `nono trust sign --all` only scans CWD | You must `cd` into each project. There's no recursive multi-project signing. |
 | Project policy can't lower enforcement | `enforcement: "audit"` in project policy is overridden by user-level `deny`. Strictest always wins. |
 | `trust-policy.json.bundle` needed for `nono run` but not for `nono trust verify` | Asymmetric enforcement. The `trust verify/list` commands warn on unsigned policies but still load them. |

@@ -22,7 +22,7 @@ When the operator runs `bm hire <role> --name <name> -t <team>`:
 
 1. The role is validated against the team's profile
 2. A member directory is created at `<team-path>/team/members/<name>/`
-3. The role's member skeleton is copied (ralph.yml, PROMPT.md, CLAUDE.md, hats, skills, knowledge)
+3. The role's member skeleton is copied (ralph.yml, PROMPT.md, AGENTS.md, hats, skills, knowledge)
 4. The member is registered in the team configuration
 5. After hiring, `bm teams sync` provisions the workspace
 

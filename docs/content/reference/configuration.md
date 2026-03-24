@@ -10,7 +10,7 @@ Each team member is configured through several files, each with a specific purpo
 |------|---------|-------|-----------|
 | `ralph.yml` | Ralph orchestrator config (hats, events, persistence) | Per member | Copy |
 | `PROMPT.md` | Role identity and cross-hat behavioral rules | Per member | Symlink |
-| `CLAUDE.md` | Role context (workspace model, knowledge paths, invariants) | Per member | Symlink |
+| `AGENTS.md` | Role context (workspace model, knowledge paths, invariants) | Per member | Symlink |
 | `.botminter.yml` | Member metadata (role name, emoji) | Per member | Read from `team/` |
 | `PROCESS.md` | Team process conventions | Team-wide | Read from `team/` |
 
@@ -69,7 +69,7 @@ coding_agents:
   claude-code:
     name: claude-code
     display_name: "Claude Code"
-    context_file: "CLAUDE.md"
+    context_file: "AGENTS.md"
     agent_dir: ".claude"
     binary: "claude"
 
@@ -81,7 +81,7 @@ default_coding_agent: claude-code
 | `coding_agents` | Yes | Map of supported coding agent definitions |
 | `coding_agents.<name>.name` | Yes | Agent identifier (matches map key) |
 | `coding_agents.<name>.display_name` | Yes | Human-readable name |
-| `coding_agents.<name>.context_file` | Yes | Filename the agent reads for context (e.g., `CLAUDE.md`) |
+| `coding_agents.<name>.context_file` | Yes | Filename the agent reads for context (e.g., `AGENTS.md`) |
 | `coding_agents.<name>.agent_dir` | Yes | Agent-specific config directory (e.g., `.claude`) |
 | `coding_agents.<name>.binary` | Yes | Binary name for launching the agent (e.g., `claude`) |
 | `default_coding_agent` | Yes | Key into `coding_agents` — the agent used unless overridden at team level |
@@ -277,7 +277,7 @@ You are the <role> for an agentic scrum team. <brief description>.
 - Hat-specific concerns go in `ralph.yml` hat instructions
 - Training mode is declared as a `## !IMPORTANT` section
 
-## CLAUDE.md
+## AGENTS.md
 
 Provides role context — workspace model, codebase access, knowledge paths, invariant paths. Claude Code injects this into every hat prompt.
 
@@ -286,7 +286,7 @@ Provides role context — workspace model, codebase access, knowledge paths, inv
 ```markdown
 # <role-name> Context
 
-Read `team/CLAUDE.md` for team-wide context.
+Read `team/AGENTS.md` for team-wide context.
 
 ## Role
 
@@ -415,7 +415,7 @@ manager:
 | Layer | Purpose | What goes here | What does not |
 |-------|---------|----------------|---------------|
 | `PROMPT.md` | Role identity | Training mode, cross-hat rules, event dispatch | Hat-specific instructions, knowledge paths |
-| `CLAUDE.md` | Role context | Workspace model, invariant paths, references | Hat instructions, knowledge paths |
+| `AGENTS.md` | Role context | Workspace model, invariant paths, references | Hat instructions, knowledge paths |
 | Hat instructions (`ralph.yml`) | Operational details | Event publishing, knowledge paths, backpressure | Role identity, invariant declarations |
 | `core.guardrails` (`ralph.yml`) | Universal rules | Lock discipline, cross-cutting constraints | Hat-specific rules |
 

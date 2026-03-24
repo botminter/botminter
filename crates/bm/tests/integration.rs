@@ -12,6 +12,17 @@ use std::fs;
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+fn test_profiles_dir(home: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    let base = home.join("Library/Application Support");
+    #[cfg(target_os = "windows")]
+    let base = home.join("AppData/Roaming");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let base = home.join(".config");
+    
+    base.join("botminter").join("profiles")
+}
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -25,7 +36,7 @@ fn claude_code_agent() -> CodingAgentDef {
     CodingAgentDef {
         name: "claude-code".into(),
         display_name: "Claude Code".into(),
-        context_file: "CLAUDE.md".into(),
+        context_file: "AGENTS.md".into(),
         agent_dir: ".claude".into(),
         binary: "claude".into(),
     }
@@ -57,7 +68,7 @@ fn git(dir: &Path, args: &[&str]) {
 /// Returns the path to the team repo (the git repo inside the team dir).
 fn setup_team(tmp: &Path, team_name: &str, profile_name: &str) -> PathBuf {
     // Compute profiles path directly — no env vars needed
-    let profiles_path = profile::profiles_dir_for(tmp);
+    let profiles_path = test_profiles_dir(tmp);
     fs::create_dir_all(&profiles_path).unwrap();
     profile::extract_embedded_to_disk(&profiles_path).unwrap();
 
@@ -126,7 +137,7 @@ fn add_team_to_config(
     git(&team_repo, &["init", "-b", "main"]);
     git(&team_repo, &["config", "user.email", "test@botminter.test"]);
     git(&team_repo, &["config", "user.name", "BM Test"]);
-    let profiles_path = profile::profiles_dir_for(tmp);
+    let profiles_path = test_profiles_dir(tmp);
     profile::extract_profile_from(&profiles_path, profile_name, &team_repo, &claude_code_agent()).unwrap();
     fs::create_dir_all(team_repo.join("members")).unwrap();
     fs::create_dir_all(team_repo.join("projects")).unwrap();
@@ -247,7 +258,7 @@ fn create_fake_fork(tmp: &Path, name: &str) -> String {
 #[test]
 fn profiles_list_returns_all_from_disk() {
     let tmp = tempfile::tempdir().unwrap();
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     fs::create_dir_all(&profiles_path).unwrap();
     profile::extract_embedded_to_disk(&profiles_path).unwrap();
 
@@ -270,7 +281,7 @@ fn profiles_list_returns_all_from_disk() {
 #[test]
 fn profiles_describe_returns_complete_data() {
     let tmp = tempfile::tempdir().unwrap();
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     fs::create_dir_all(&profiles_path).unwrap();
     profile::extract_embedded_to_disk(&profiles_path).unwrap();
 
@@ -293,7 +304,7 @@ fn profiles_describe_returns_complete_data() {
 #[test]
 fn profiles_describe_nonexistent_errors() {
     let tmp = tempfile::tempdir().unwrap();
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     fs::create_dir_all(&profiles_path).unwrap();
     profile::extract_embedded_to_disk(&profiles_path).unwrap();
 
@@ -322,7 +333,7 @@ fn hire_with_explicit_name() {
 
     // Verify key skeleton files were extracted
     assert!(member_dir.join("PROMPT.md").exists());
-    assert!(member_dir.join("CLAUDE.md").exists());
+    assert!(member_dir.join("AGENTS.md").exists());
     assert!(member_dir.join("ralph.yml").exists());
 
     // Verify git commit was created
@@ -959,7 +970,7 @@ fn complete_bash(args: &[&str], home: &Path) -> String {
 fn dynamic_completions_include_profile_names() {
     let tmp = tempfile::tempdir().unwrap();
     // Extract profiles to disk so completions can find them
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     fs::create_dir_all(&profiles_path).unwrap();
     profile::extract_embedded_to_disk(&profiles_path).unwrap();
 
@@ -1082,7 +1093,7 @@ fn roles_list_matches_profile_describe() {
     let tmp = tempfile::tempdir().unwrap();
     setup_team(tmp.path(), "roles-match-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     let expected_roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
 
     let output = bm_run(tmp.path(), &["roles", "list", "-t", "roles-match-team"]);
@@ -1133,7 +1144,7 @@ fn hire_multiple_roles_then_sync() {
     let tmp = tempfile::tempdir().unwrap();
     let team_repo = setup_team(tmp.path(), "multi-hire-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
     let picks: Vec<&str> = (0..3).map(|i| roles[i % roles.len()].as_str()).collect();
     let names = ["m1", "m2", "m3"];
@@ -1178,7 +1189,7 @@ fn sync_with_multiple_projects_creates_project_submodules() {
     let tmp = tempfile::tempdir().unwrap();
     let team_repo = setup_team(tmp.path(), "proj-ws-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
     let role = &roles[0];
 
@@ -1218,7 +1229,7 @@ fn hire_same_role_twice_auto_suffix() {
     let tmp = tempfile::tempdir().unwrap();
     let team_repo = setup_team(tmp.path(), "suffix-dyn-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
     let role = &roles[0];
 
@@ -1241,7 +1252,7 @@ fn sync_after_second_hire_creates_new_workspace() {
     let tmp = tempfile::tempdir().unwrap();
     let team_repo = setup_team(tmp.path(), "incr-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
     let role_a = &roles[0];
 
@@ -1305,7 +1316,7 @@ fn hire_with_corrupt_manifest_errors() {
     let tmp = tempfile::tempdir().unwrap();
     let team_repo = setup_team(tmp.path(), "corrupt-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
     let role = &roles[0];
 
@@ -1326,7 +1337,7 @@ fn sync_missing_workzone_creates_it() {
     let tmp = tempfile::tempdir().unwrap();
     setup_team(tmp.path(), "recreate-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
     let role = &roles[0];
 
@@ -2105,7 +2116,7 @@ fn teams_list_shows_member_and_project_counts() {
     let tmp = tempfile::tempdir().unwrap();
     setup_team(tmp.path(), "count-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
     let role = &roles[0];
 
@@ -2153,7 +2164,7 @@ fn teams_show_displays_full_details() {
     let tmp = tempfile::tempdir().unwrap();
     setup_team(tmp.path(), "show-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
     let role = &roles[0];
 
@@ -2210,7 +2221,7 @@ fn members_show_displays_details() {
     let tmp = tempfile::tempdir().unwrap();
     setup_team(tmp.path(), "mshow-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
     let role = &roles[0];
 
@@ -2343,7 +2354,7 @@ fn projects_show_displays_details() {
 fn setup_chat_workspace(tmp: &Path, team_name: &str) -> (String, String) {
     let team_repo = setup_team(tmp, team_name, "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp);
+    let profiles_path = test_profiles_dir(tmp);
     let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
     let role = &roles[0];
 
@@ -2500,7 +2511,7 @@ fn chat_without_workspace_errors() {
     let tmp = tempfile::tempdir().unwrap();
     setup_team(tmp.path(), "chat-nows-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
+    let profiles_path = test_profiles_dir(tmp.path());
     let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
     let role = &roles[0];
 
@@ -2591,11 +2602,7 @@ fn init_non_interactive_creates_team_with_skip_github() {
     );
 
     // Verify profiles were extracted with botminter.yml manifest
-    // profiles_dir uses dirs::config_dir() -> XDG_CONFIG_HOME or HOME/.config
-    let profiles_dir = home
-        .join(".config")
-        .join("botminter")
-        .join("profiles");
+    let profiles_dir = test_profiles_dir(home);
     assert!(
         profiles_dir.join("scrum-compact").join("botminter.yml").exists(),
         "botminter.yml should exist in extracted profile directory"
@@ -3323,7 +3330,7 @@ fn init_bridge_records_in_manifest() {
     setup_git_config(home);
 
     // Pre-populate profiles
-    let profiles_path = profile::profiles_dir_for(home);
+    let profiles_path = test_profiles_dir(home);
     fs::create_dir_all(&profiles_path).unwrap();
     profile::extract_embedded_to_disk(&profiles_path).unwrap();
 
@@ -3369,7 +3376,7 @@ fn init_no_bridge_has_no_bridge_key() {
     let home = tmp.path();
     setup_git_config(home);
 
-    let profiles_path = profile::profiles_dir_for(home);
+    let profiles_path = test_profiles_dir(home);
     fs::create_dir_all(&profiles_path).unwrap();
     profile::extract_embedded_to_disk(&profiles_path).unwrap();
 
@@ -3412,7 +3419,7 @@ fn init_bridge_invalid_name_fails() {
     let home = tmp.path();
     setup_git_config(home);
 
-    let profiles_path = profile::profiles_dir_for(home);
+    let profiles_path = test_profiles_dir(home);
     fs::create_dir_all(&profiles_path).unwrap();
     profile::extract_embedded_to_disk(&profiles_path).unwrap();
 

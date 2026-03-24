@@ -59,8 +59,8 @@ completed: 2026-03-04
 - Added `CodingAgentDef` struct to `profile.rs` with `name`, `display_name`, `context_file`, `agent_dir`, `binary` fields
 - Updated `ProfileManifest` with `coding_agents: HashMap` and `default_coding_agent` fields
 - Implemented `resolve_coding_agent()` for profile-default + team-override resolution
-- Restructured all 3 profiles: `agent/` → `coding-agent/`, `CLAUDE.md` → `context.md` with inline agent tags
-- Wired unified-to-agent-specific transformation into `extract_dir_recursive_from_disk()` (profile.rs:440-498) — filters agent tags from `.md/.yml/.yaml/.sh` files, renames `context.md` → `CLAUDE.md`
+- Restructured all 3 profiles: `agent/` → `coding-agent/`, `AGENTS.md` → `context.md` with inline agent tags
+- Wired unified-to-agent-specific transformation into `extract_dir_recursive_from_disk()` (profile.rs:440-498) — filters agent tags from `.md/.yml/.yaml/.sh` files, renames `context.md` → `AGENTS.md`
 - Parameterized workspace.rs — all hardcoded "claude-code" strings replaced with resolved `CodingAgentDef` config values
 - Added `bm profiles describe --show-tags` via `scan_agent_tags()` function
 - Sprint 1 documentation updated
@@ -70,7 +70,7 @@ completed: 2026-03-04
 - `crates/bm/src/profile.rs` — CodingAgentDef struct, resolve_coding_agent(), extract_dir_recursive_from_disk() with filtering, scan_agent_tags()
 - `crates/bm/src/workspace.rs` — Parameterized with CodingAgentDef instead of hardcoded strings
 - `profiles/scrum/botminter.yml` — Added coding_agents section with claude-code entry
-- `profiles/scrum/context.md` — Renamed from CLAUDE.md, added inline agent tags
+- `profiles/scrum/context.md` — Renamed from AGENTS.md, added inline agent tags
 - `profiles/scrum/coding-agent/` — Renamed from agent/, restructured skills directory
 - `profiles/scrum-compact/` — Same restructuring
 - `profiles/scrum-compact-telegram/` — Same restructuring

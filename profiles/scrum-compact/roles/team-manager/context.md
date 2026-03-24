@@ -35,7 +35,7 @@ team-manager-workspace/              # Workspace (CWD)
     projects/<project>/              # Project-specific
   PROMPT.md
 <!-- +agent:claude-code -->
-  CLAUDE.md
+  AGENTS.md
 <!-- -agent -->
   ralph.yml
 ```

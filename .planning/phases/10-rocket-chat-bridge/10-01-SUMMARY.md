@@ -24,7 +24,7 @@ key-files:
     - .planning/spikes/rc-podman-spike/spike.sh
     - .planning/spikes/rc-podman-spike/ralph-rc-test/ralph.yml
     - .planning/spikes/rc-podman-spike/ralph-rc-test/PROMPT.md
-    - .planning/spikes/rc-podman-spike/ralph-rc-test/CLAUDE.md
+    - .planning/spikes/rc-podman-spike/ralph-rc-test/AGENTS.md
     - .planning/spikes/rc-podman-spike/README.md
   modified: []
 
@@ -79,7 +79,7 @@ Each task was committed atomically:
 - `.planning/spikes/rc-podman-spike/spike.sh` - Standalone script: boot RC+MongoDB pod, create users/channels, test bidirectional messaging
 - `.planning/spikes/rc-podman-spike/ralph-rc-test/ralph.yml` - Ralph RObot.rocketchat config for live RC integration
 - `.planning/spikes/rc-podman-spike/ralph-rc-test/PROMPT.md` - Test agent instructions (send question, write response, complete)
-- `.planning/spikes/rc-podman-spike/ralph-rc-test/CLAUDE.md` - Test agent context
+- `.planning/spikes/rc-podman-spike/ralph-rc-test/AGENTS.md` - Test agent context
 - `.planning/spikes/rc-podman-spike/README.md` - Full spike results, observations, and environment details
 
 ## Decisions Made

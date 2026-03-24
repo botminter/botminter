@@ -25,7 +25,7 @@ key-files:
     - docs/content/reference/cli.md
     - docs/content/concepts/profiles.md
     - docs/content/how-to/generate-team-repo.md
-    - CLAUDE.md
+    - AGENTS.md
 
 key-decisions:
   - "Used inline semver comparison (major.minor.patch numeric) instead of adding semver crate dependency"
@@ -74,7 +74,7 @@ Each task was committed atomically:
 - `docs/content/reference/cli.md` - Added non-interactive mode section, updated --show-tags description
 - `docs/content/concepts/profiles.md` - Added profile version detection section
 - `docs/content/how-to/generate-team-repo.md` - Added non-interactive mode section
-- `CLAUDE.md` - Added --non-interactive to command listing
+- `AGENTS.md` - Added --non-interactive to command listing
 
 ## Decisions Made
 - Used inline semver comparison (parse major.minor.patch as u64 tuples) instead of adding the semver crate -- avoids a new dependency for a simple comparison

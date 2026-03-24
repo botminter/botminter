@@ -11,7 +11,7 @@ requires:
     provides: Disk-based profile API for reading manifests
 provides:
   - Workspace repo creation with GitHub repos and git submodules
-  - Context assembly (CLAUDE.md, ralph.yml, PROMPT.md surfaced at workspace root)
+  - Context assembly (AGENTS.md, ralph.yml, PROMPT.md surfaced at workspace root)
   - Workspace sync for existing repos
   - bm start/stop adapted for workspace repo model
   - Status commands with workspace branch and submodule health
@@ -31,7 +31,7 @@ key-files:
     - crates/bm/src/commands/members.rs
 
 key-decisions:
-  - "GitHub-hosted workspace repos with git submodules over nested clones — clean separation, no CLAUDE.md confusion"
+  - "GitHub-hosted workspace repos with git submodules over nested clones — clean separation, no AGENTS.md confusion"
   - "Symlinks for agent dir assembly — three scopes (team, project, member) linked into team submodule"
   - ".botminter.workspace marker file for workspace detection — simple, no config dependency"
   - "copy_if_newer_verbose for sync — only updates changed files, idempotent"
@@ -52,7 +52,7 @@ completed: 2026-03-04
 
 # Phase 3: Workspace Repository Completion Summary
 
-**Workspace repo creation with GitHub-hosted repos and git submodules, context assembly surfacing CLAUDE.md/ralph.yml/PROMPT.md at workspace root, sync for existing repos, and adapted start/stop/status commands**
+**Workspace repo creation with GitHub-hosted repos and git submodules, context assembly surfacing AGENTS.md/ralph.yml/PROMPT.md at workspace root, sync for existing repos, and adapted start/stop/status commands**
 
 ## Performance
 
@@ -62,7 +62,7 @@ completed: 2026-03-04
 ## Accomplishments
 - Implemented `create_workspace_repo()` (~200 lines) — push mode creates GitHub repos via `gh repo create`, local mode uses `git init`
 - Built submodule model: `team/` submodule → team repo, `projects/<name>/` submodules → project forks
-- Implemented `assemble_workspace_repo_context()` — copies CLAUDE.md, PROMPT.md, ralph.yml from team submodule to workspace root
+- Implemented `assemble_workspace_repo_context()` — copies AGENTS.md, PROMPT.md, ralph.yml from team submodule to workspace root
 - Built `assemble_agent_dir_submodule()` — three-scope symlink assembly (team-level, project-level, member-level) into team submodule paths
 - Implemented `sync_workspace()` — updates submodules, re-copies context files if newer, re-assembles symlinks, commits and pushes
 - Added `.botminter.workspace` marker file with `member: <name>` for workspace identity detection
@@ -79,7 +79,7 @@ completed: 2026-03-04
 - `crates/bm/src/commands/members.rs` — Workspace validation via marker
 
 ## Decisions Made
-- GitHub-hosted repos over nested clones — avoids CLAUDE.md confusion from parent repo, enables independent git operations
+- GitHub-hosted repos over nested clones — avoids AGENTS.md confusion from parent repo, enables independent git operations
 - Symlinks for agent dir — keeps single source of truth in team submodule, avoids file duplication
 - Member-named branches in submodules — prevents detached HEAD state, gives clean commit attribution
 - `.botminter.workspace` marker — simple file-based detection, no config coupling
@@ -95,7 +95,7 @@ completed: 2026-03-04
 
 **2. `hide_tracked_bm_files()` with git skip-worktree**
 - **Issue:** Added `git update-index --skip-worktree` to hide BotMinter files from git status. Not in design or plan
-- **Rationale:** Reduces noise in workspace repos where CLAUDE.md, ralph.yml are tracked but shouldn't clutter status
+- **Rationale:** Reduces noise in workspace repos where AGENTS.md, ralph.yml are tracked but shouldn't clutter status
 - **Impact:** Quality-of-life addition; no scope creep
 
 ## Next Phase Readiness

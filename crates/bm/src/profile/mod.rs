@@ -7,7 +7,7 @@ mod team_repo;
 
 // Re-export public API
 pub use agent::{
-    ensure_minty_initialized, resolve_agent_from_profiles, resolve_coding_agent, scan_agent_tags,
+    ensure_minty_initialized, resolve_agent_def_from_profiles, resolve_coding_agent, scan_agent_tags,
 };
 pub use embedded::{
     extract_embedded_to_disk, extract_single_profile_to_disk, list_embedded_profiles,
@@ -388,7 +388,7 @@ pub(crate) mod test_support {
         CodingAgentDef {
             name: "claude-code".into(),
             display_name: "Claude Code".into(),
-            context_file: "CLAUDE.md".into(),
+            context_file: "AGENTS.md".into(),
             agent_dir: ".claude".into(),
             binary: "claude".into(),
         }
@@ -721,7 +721,7 @@ mod tests {
             let agent = agent.unwrap();
             assert_eq!(agent.name, "claude-code");
             assert_eq!(agent.display_name, "Claude Code");
-            assert_eq!(agent.context_file, "CLAUDE.md");
+            assert_eq!(agent.context_file, "AGENTS.md");
             assert_eq!(agent.agent_dir, ".claude");
             assert_eq!(agent.binary, "claude");
         }

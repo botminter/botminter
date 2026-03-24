@@ -53,7 +53,7 @@ Config is saved early so that if a GitHub operation fails, the team is still reg
         team/                           # Team repo (control plane, git repo)
           botminter.yml                 # Profile manifest (roles, statuses, views)
           PROCESS.md                    # Issue format, labels, communication protocols
-          CLAUDE.md                     # Team-wide agent context (name varies by coding agent)
+          AGENTS.md                     # Team-wide agent context (name varies by coding agent)
           knowledge/                    # Team-level knowledge files
           invariants/                   # Team-level quality rules
           coding-agent/
@@ -119,7 +119,7 @@ This is where the setup becomes real. `bm teams sync` does the following for eac
 - **Creates a workspace directory** per member × project
 - **Clones the project fork** into the workspace
 - **Adds the team repo** as a `team/` submodule inside the workspace repo
-- **Copies context files** — copies `PROMPT.md`, `CLAUDE.md`, and `ralph.yml` from the team submodule to the workspace root
+- **Copies context files** — copies `PROMPT.md`, `AGENTS.md`, and `ralph.yml` from the team submodule to the workspace root
 - **Assembles `.claude/agents/`** — merges agent definitions from `team/` submodule paths via symlinks
 
 If you've already pushed the team repo, you can run `bm teams sync` without `--repos`.
@@ -198,7 +198,7 @@ bm projects list                 # List configured projects with fork URLs
           projects/
             my-project/                          # Submodule → project fork
           PROMPT.md                              # Copied from team/members/superman-01/
-          CLAUDE.md                              # Copied from team/members/superman-01/
+          AGENTS.md                              # Copied from team/members/superman-01/
           ralph.yml                              # Copied from team/members/superman-01/
           .claude/agents/                        # Symlinks into team/ submodule paths
           .botminter.workspace                   # Workspace marker file

@@ -39,7 +39,7 @@ While knowledge provides advisory context, invariants enforce **mandatory constr
 | Project | `team/projects/<project>/invariants/` | Project-specific quality rules |
 | Member | `team/members/<member>/invariants/` | Role-specific constraints |
 
-Declare invariants in the member's `CLAUDE.md` under an `# INVARIANTS` section. Claude Code injects `CLAUDE.md` natively into every hat, so invariants apply universally within a member.
+Declare invariants in the member's `AGENTS.md` under an `# INVARIANTS` section. Claude Code injects `AGENTS.md` natively into every hat, so invariants apply universally within a member.
 
 ## Backpressure
 
@@ -51,7 +51,7 @@ Backpressure differs from invariants:
 
 | Aspect | Invariants | Backpressure |
 |--------|-----------|--------------|
-| Scope | All hats via CLAUDE.md | Per hat |
+| Scope | All hats via AGENTS.md | Per hat |
 | Granularity | General rules (team/project/member) | Specific verifiable conditions |
 | Purpose | Universal constraints | Gate status transitions |
 | Configuration | File-based (`.md` files) | Inline in hat instructions |

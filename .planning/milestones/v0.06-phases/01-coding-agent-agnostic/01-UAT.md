@@ -25,7 +25,7 @@ expected: Run `bm profiles describe scrum --show-tags`. Output includes a "Codin
 result: pass (re-verified after gap closure — label renamed from "Agent Tags" to "Coding-Agent Dependent Files")
 
 ### 4. Profile Structure Restructured
-expected: Check `profiles/scrum/`. The old `agent/` directory is now `coding-agent/`. The old `CLAUDE.md` is now `context.md` with inline agent tags (+agent:claude-code / -agent markers visible in the source).
+expected: Check `profiles/scrum/`. The old `agent/` directory is now `coding-agent/`. The old `AGENTS.md` is now `context.md` with inline agent tags (+agent:claude-code / -agent markers visible in the source).
 result: pass
 
 ### 5. botminter.yml Has coding_agents Config
@@ -33,7 +33,7 @@ expected: Open `profiles/scrum/botminter.yml`. Contains a `coding_agents` sectio
 result: pass
 
 ### 6. Extraction Filters Agent Tags
-expected: When a profile is extracted (e.g., via `bm init` or `bm teams sync`), unified files with +agent:claude-code/-agent tags produce clean output with only the matching agent's content. context.md is renamed to CLAUDE.md in the output. Non-matching agent sections are stripped.
+expected: When a profile is extracted (e.g., via `bm init` or `bm teams sync`), unified files with +agent:claude-code/-agent tags produce clean output with only the matching agent's content. context.md is renamed to AGENTS.md in the output. Non-matching agent sections are stripped.
 result: pass (re-verified after gap closure — staleness detection auto-re-extracts stale profiles)
 
 ### 7. Staleness Detection Uses Profile Version

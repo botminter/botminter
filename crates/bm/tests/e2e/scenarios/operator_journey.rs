@@ -384,7 +384,7 @@ fn sync_bridge_and_repos_fn(_gh_token: String) -> impl Fn(&mut TestEnv) + Send +
         let ws = env.home.join("workspaces").join(TEAM_NAME).join(MEMBER_DIR);
         assert!(ws.join(".botminter.workspace").exists());
         assert!(ws.join("team").is_dir());
-        for file in ["PROMPT.md", "CLAUDE.md", "ralph.yml"] {
+        for file in ["PROMPT.md", "AGENTS.md", "ralph.yml"] {
             assert!(ws.join(file).exists(), "{} missing", file);
         }
 

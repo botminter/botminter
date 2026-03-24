@@ -8,9 +8,15 @@ coding_agents:
   claude-code:
     name: claude-code
     display_name: "Claude Code"
-    context_file: "CLAUDE.md"
+    context_file: "AGENTS.md"
     agent_dir: ".claude"
     binary: "claude"
+  gemini-cli:
+    name: gemini-cli
+    display_name: "Gemini CLI"
+    context_file: "AGENTS.md"
+    agent_dir: ".gemini"
+    binary: "gemini"
 
 default_coding_agent: claude-code
 

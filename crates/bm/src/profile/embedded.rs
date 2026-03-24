@@ -223,8 +223,8 @@ mod tests {
             let context_path = tmp.path().join(&name).join("context.md");
             assert!(context_path.exists(), "Profile '{}' should keep context.md (not renamed)", name);
             assert!(
-                !tmp.path().join(&name).join("CLAUDE.md").exists(),
-                "Profile '{}' should not have CLAUDE.md (no rename during init)", name
+                !tmp.path().join(&name).join("AGENTS.md").exists(),
+                "Profile '{}' should not have AGENTS.md (no rename during init)", name
             );
         }
     }
@@ -297,8 +297,8 @@ mod tests {
             );
             let agent = agent.unwrap();
             assert_eq!(
-                agent.context_file, "CLAUDE.md",
-                "Profile '{}' default agent should have CLAUDE.md context_file", name
+                agent.context_file, "AGENTS.md",
+                "Profile '{}' default agent should have AGENTS.md context_file", name
             );
         }
     }

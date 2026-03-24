@@ -148,27 +148,35 @@ impl TestEnv {
         fs::create_dir_all(&runtime_dir).unwrap();
         fs::create_dir_all(&data_dir).unwrap();
 
-        let dbus_output = Command::new("dbus-daemon")
-            .args(["--session", "--fork", "--print-address", "--print-pid"])
-            .env("XDG_RUNTIME_DIR", &runtime_dir)
-            .output()
-            .expect("failed to start dbus-daemon — is dbus installed?");
-        assert!(dbus_output.status.success(), "dbus-daemon failed to start");
+        #[cfg(target_os = "linux")]
+        let (dbus_addr, dbus_pid) = {
+            let dbus_output = Command::new("dbus-daemon")
+                .args(["--session", "--fork", "--print-address", "--print-pid"])
+                .env("XDG_RUNTIME_DIR", &runtime_dir)
+                .output()
+                .expect("failed to start dbus-daemon — is dbus installed?");
+            assert!(dbus_output.status.success(), "dbus-daemon failed to start");
 
-        let stdout = String::from_utf8_lossy(&dbus_output.stdout);
-        let lines: Vec<&str> = stdout.trim().lines().collect();
-        assert!(
-            lines.len() >= 2,
-            "dbus-daemon output missing address/pid: {:?}",
-            lines
-        );
-        let dbus_addr = lines[0].trim().to_string();
-        let dbus_pid: u32 = lines[1]
-            .trim()
-            .parse()
-            .expect("invalid dbus-daemon PID");
+            let stdout = String::from_utf8_lossy(&dbus_output.stdout);
+            let lines: Vec<&str> = stdout.trim().lines().collect();
+            assert!(
+                lines.len() >= 2,
+                "dbus-daemon output missing address/pid: {:?}",
+                lines
+            );
+            let dbus_addr = lines[0].trim().to_string();
+            let dbus_pid: u32 = lines[1]
+                .trim()
+                .parse()
+                .expect("invalid dbus-daemon PID");
+            (dbus_addr, dbus_pid)
+        };
+
+        #[cfg(not(target_os = "linux"))]
+        let (dbus_addr, dbus_pid) = (String::new(), 0);
 
         // g. Start gnome-keyring-daemon on isolated D-Bus
+        #[cfg(target_os = "linux")]
         Self::start_keyring_daemon_with_env(&dbus_addr, &runtime_dir, &data_dir);
 
         // h. Build base env
@@ -225,6 +233,7 @@ impl TestEnv {
     }
 
     /// Start gnome-keyring-daemon with specific env vars (no process-wide mutation).
+    #[allow(dead_code)]
     fn start_keyring_daemon_with_env(dbus_addr: &str, runtime_dir: &Path, data_dir: &Path) {
         let mut gkd = Command::new("gnome-keyring-daemon")
             .args([
@@ -368,6 +377,7 @@ impl TestEnv {
         }
 
         // Restart gnome-keyring-daemon
+        #[cfg(target_os = "linux")]
         Self::start_keyring_daemon_with_env(&self.dbus_addr, &runtime_dir, &data_dir);
         eprintln!("  Keyring reset (fresh data)");
     }
@@ -417,6 +427,7 @@ impl TestEnv {
         self.exports = exports;
 
         // Reset keyring
+        #[cfg(target_os = "linux")]
         Self::start_keyring_daemon_with_env(&self.dbus_addr, &runtime_dir, &data_dir);
         eprintln!("  HOME reset, keyring restarted");
     }

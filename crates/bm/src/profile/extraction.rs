@@ -25,7 +25,7 @@ pub(super) fn should_filter(filename: &str) -> bool {
 ///
 /// Text files (`.md`, `.yml`, `.yaml`, `.sh`) are filtered through the agent tag
 /// pipeline to strip non-matching agent sections. `context.md` is additionally
-/// renamed to `coding_agent.context_file` (e.g., `CLAUDE.md` for Claude Code).
+/// renamed to `coding_agent.context_file` (e.g., `AGENTS.md` for Claude Code).
 pub fn extract_profile_to(
     profile_name: &str,
     target: &Path,
@@ -103,7 +103,7 @@ pub(crate) fn extract_member_from(
 /// During extraction:
 /// - Text files (`.md`, `.yml`, `.yaml`, `.sh`) are filtered through `filter_file()`
 ///   to strip non-matching agent tag sections.
-/// - `context.md` is renamed to `coding_agent.context_file` (e.g., `CLAUDE.md`).
+/// - `context.md` is renamed to `coding_agent.context_file` (e.g., `AGENTS.md`).
 /// - All other files (images, binary) are copied verbatim.
 fn extract_dir_recursive_from_disk(
     source_dir: &Path,
@@ -177,7 +177,7 @@ mod tests {
         extract_profile_from(&base, "scrum", output.path(), &claude_code_agent()).unwrap();
 
         assert!(output.path().join("PROCESS.md").exists());
-        assert!(output.path().join("CLAUDE.md").exists());
+        assert!(output.path().join("AGENTS.md").exists());
         assert!(!output.path().join("context.md").exists());
         assert!(output.path().join("botminter.yml").exists());
         assert!(output.path().join("knowledge").is_dir());
@@ -195,7 +195,7 @@ mod tests {
 
         assert!(output.path().join(".botminter.yml").exists());
         assert!(output.path().join("PROMPT.md").exists());
-        assert!(output.path().join("CLAUDE.md").exists());
+        assert!(output.path().join("AGENTS.md").exists());
         assert!(!output.path().join("context.md").exists());
         assert!(output.path().join("ralph.yml").exists());
     }
@@ -259,10 +259,10 @@ mod tests {
         let output = tempfile::tempdir().unwrap();
         extract_profile_from(&base, "scrum", output.path(), &claude_code_agent()).unwrap();
 
-        let content = std::fs::read_to_string(output.path().join("CLAUDE.md")).unwrap();
-        assert!(!content.contains("+agent:"), "Extracted CLAUDE.md should not contain +agent: tags");
-        assert!(!content.contains("<!-- -agent -->"), "Extracted CLAUDE.md should not contain -agent close tags");
-        assert!(content.len() > 50, "Extracted CLAUDE.md should have substantial content");
+        let content = std::fs::read_to_string(output.path().join("AGENTS.md")).unwrap();
+        assert!(!content.contains("+agent:"), "Extracted AGENTS.md should not contain +agent: tags");
+        assert!(!content.contains("<!-- -agent -->"), "Extracted AGENTS.md should not contain -agent close tags");
+        assert!(content.len() > 50, "Extracted AGENTS.md should have substantial content");
     }
 
     #[test]
@@ -294,9 +294,9 @@ mod tests {
         let output = tempfile::tempdir().unwrap();
         extract_member_from(&base, "scrum", "architect", output.path(), &claude_code_agent()).unwrap();
 
-        let content = std::fs::read_to_string(output.path().join("CLAUDE.md")).unwrap();
-        assert!(!content.contains("+agent:"), "Extracted member CLAUDE.md should not contain +agent: tags");
-        assert!(!content.contains("<!-- -agent -->"), "Extracted member CLAUDE.md should not contain -agent close tags");
+        let content = std::fs::read_to_string(output.path().join("AGENTS.md")).unwrap();
+        assert!(!content.contains("+agent:"), "Extracted member AGENTS.md should not contain +agent: tags");
+        assert!(!content.contains("<!-- -agent -->"), "Extracted member AGENTS.md should not contain -agent close tags");
     }
 
     #[test]
@@ -329,7 +329,7 @@ mod tests {
         extract_profile_from(&base, "scrum", output.path(), &mock_agent).unwrap();
 
         assert!(output.path().join("GEMINI.md").exists(), "Mock agent should produce GEMINI.md");
-        assert!(!output.path().join("CLAUDE.md").exists(), "Mock agent should not produce CLAUDE.md");
+        assert!(!output.path().join("AGENTS.md").exists(), "Mock agent should not produce AGENTS.md");
         assert!(!output.path().join("context.md").exists(), "Mock agent should not produce context.md");
 
         let content = std::fs::read_to_string(output.path().join("GEMINI.md")).unwrap();
@@ -350,7 +350,7 @@ mod tests {
         extract_member_from(&base, "scrum", "architect", output.path(), &mock_agent).unwrap();
 
         assert!(output.path().join("GEMINI.md").exists(), "Mock agent should produce GEMINI.md in member dir");
-        assert!(!output.path().join("CLAUDE.md").exists(), "Mock agent should not produce CLAUDE.md in member dir");
+        assert!(!output.path().join("AGENTS.md").exists(), "Mock agent should not produce AGENTS.md in member dir");
         assert!(!output.path().join("context.md").exists(), "Mock agent should not produce context.md in member dir");
     }
 }

@@ -23,7 +23,7 @@ bm teams sync --repos
 3. Adds the team repo as `team/` submodule
 4. Adds each assigned project as `projects/<project>/` submodule
 5. Checks out member branches in all submodules
-6. Copies context files (CLAUDE.md, PROMPT.md, ralph.yml) from `team/members/<member>/`
+6. Copies context files (AGENTS.md, PROMPT.md, ralph.yml) from `team/members/<member>/`
 7. Assembles `.claude/agents/` with symlinks into `team/` submodule paths
 8. Writes `.botminter.workspace` marker and `.gitignore`
 9. Commits and pushes
@@ -121,7 +121,7 @@ bm teams sync
     | What | How |
     |------|-----|
     | Submodules (`team/`, `projects/`) | `git submodule update --remote` |
-    | `CLAUDE.md`, `PROMPT.md` | Re-copy if team submodule version is newer |
+    | `AGENTS.md`, `PROMPT.md` | Re-copy if team submodule version is newer |
     | `ralph.yml` | Re-copy if team submodule version is newer |
     | `settings.local.json` | Re-copy if present |
     | `.claude/agents/` | Re-assemble symlinks into `team/` submodule paths |

@@ -349,9 +349,9 @@ fn stub_schema_json_is_valid_json_schema() {
 **Warning signs:** If the meta-ADR is longer than the bridge spec, priorities are inverted.
 
 ### Pitfall 4: Legacy specs/ Removal Breaks References
-**What goes wrong:** Removing `specs/` directory contents breaks references in CLAUDE.md, README.md, or other project documentation.
-**Why it happens:** `specs/master-plan/` is referenced in CLAUDE.md Key Directories table and elsewhere.
-**How to avoid:** After removing `specs/` contents, grep the entire repo for `specs/master-plan`, `specs/milestones`, `specs/prompts`, `specs/tasks`, `specs/design-principles`, `specs/presets` and update or remove all references. Update CLAUDE.md Key Directories table.
+**What goes wrong:** Removing `specs/` directory contents breaks references in AGENTS.md, README.md, or other project documentation.
+**Why it happens:** `specs/master-plan/` is referenced in AGENTS.md Key Directories table and elsewhere.
+**How to avoid:** After removing `specs/` contents, grep the entire repo for `specs/master-plan`, `specs/milestones`, `specs/prompts`, `specs/tasks`, `specs/design-principles`, `specs/presets` and update or remove all references. Update AGENTS.md Key Directories table.
 **Warning signs:** Broken links or stale references in project documentation.
 
 ### Pitfall 5: bridge.yml Schema Too Rigid or Too Loose
