@@ -1,22 +1,22 @@
 # Design Principles
 
-Validated rules for building member skeletons (`ralph.yml`, `PROMPT.md`, `CLAUDE.md`, hat instructions) and sprint-level prompts. These principles were established through the Milestone 1.5 (M1.5) spike, Milestone 2 (M2) design, and sprint execution.
+Validated rules for building member skeletons (`ralph.yml`, `PROMPT.md`, `AGENTS.md`, hat instructions) and sprint-level prompts. These principles were established through the Milestone 1.5 (M1.5) spike, Milestone 2 (M2) design, and sprint execution.
 
 ## 1. Separation of concerns
 
 | Layer | Purpose | Examples |
 |-------|---------|---------|
 | **PROMPT.md** | Role identity + cross-hat behavioral rules | "You are the architect", training mode declaration, sync-before-scan |
-| **CLAUDE.md** | Role context — workspace model, references, invariant locations | Workspace repo model, pointers to `team/CLAUDE.md` and `PROCESS.md` |
+| **AGENTS.md** | Role context — workspace model, references, invariant locations | Workspace repo model, pointers to `team/AGENTS.md` and `PROCESS.md` |
 | **Hat instructions** (`ralph.yml`) | Operational details for each hat | Event publishing, poll-log, knowledge paths, backpressure gates |
 | **`core.guardrails`** (`ralph.yml`) | Universal behavioral rules (numbered 999+) | Lock discipline, invariant compliance |
 
 **Rules:**
 
-- PROMPT.md and CLAUDE.md must not prompt about hats. Ralph handles hat prompting.
+- PROMPT.md and AGENTS.md must not prompt about hats. Ralph handles hat prompting.
 - Cross-hat concerns go in PROMPT.md. Hat-specific concerns go in hat instructions.
-- Knowledge paths go in each hat's `### Knowledge` section — not in PROMPT.md or CLAUDE.md.
-- Generic invariants go in CLAUDE.md's `# INVARIANTS` section.
+- Knowledge paths go in each hat's `### Knowledge` section — not in PROMPT.md or AGENTS.md.
+- Generic invariants go in AGENTS.md's `# INVARIANTS` section.
 - Hat-specific quality gates go in `### Backpressure` in hat instructions.
 - Universal guardrails go in `core.guardrails` in ralph.yml.
 
@@ -90,7 +90,7 @@ Work hats must not subscribe to rejection events when multiple work hats share t
 | Agent CWD is the workspace repo root | Team repo is the `team/` submodule; projects are under `projects/`. |
 | All roles use the same workspace model | Including non-code-working roles. |
 | `.botminter.workspace` marker required | Read by `bm start` to discover workspaces. |
-| PROMPT.md, CLAUDE.md, and ralph.yml are copies | Require `bm teams sync` to update. |
+| PROMPT.md, AGENTS.md, and ralph.yml are copies | Require `bm teams sync` to update. |
 | Skills read directly via `skills.dirs` | No assembly needed. |
 | Agents symlinked into `.claude/agents/` | From `team/` submodule paths. |
 | `.ralph/` excluded via `.gitignore` | Runtime state is gitignored in the workspace repo. |
@@ -100,7 +100,7 @@ Work hats must not subscribe to rejection events when multiple work hats share t
 | Tier | Where configured | Scope | Rules |
 |------|-----------------|-------|-------|
 | **Knowledge** | `### Knowledge` in hat instructions | Per hat | Lazy — list directories, agent decides what is relevant. Do not force upfront reads. |
-| **Invariants** | `# INVARIANTS` in CLAUDE.md | All hats | Deep context, file-based, accumulated across scopes. |
+| **Invariants** | `# INVARIANTS` in AGENTS.md | All hats | Deep context, file-based, accumulated across scopes. |
 | **Backpressure** | `### Backpressure` in hat instructions | Per hat | Short, verifiable conditions that block status transitions. Define what, not how. |
 | **Guardrails** | `core.guardrails` in ralph.yml | All hats | Universal rules injected as numbered `### GUARDRAILS` into every hat prompt. |
 
@@ -140,6 +140,6 @@ Sprint PROMPTs drive Ralph to implement a sprint's work. They follow a standard 
 
 ## Related topics
 
-- [Configuration Files](configuration.md) — ralph.yml, PROMPT.md, CLAUDE.md structure
+- [Configuration Files](configuration.md) — ralph.yml, PROMPT.md, AGENTS.md structure
 - [Knowledge & Invariants](../concepts/knowledge-invariants.md) — recursive scoping model
 - [Member Roles](member-roles.md) — role-specific configurations

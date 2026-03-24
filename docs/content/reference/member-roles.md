@@ -165,5 +165,5 @@ The full story lifecycle (QE writes tests, dev implements, QE verifies, reviewer
 ## Related topics
 
 - [Coordination Model](../concepts/coordination-model.md) — pull-based work discovery
-- [Configuration Files](configuration.md) — ralph.yml, PROMPT.md, CLAUDE.md structure
+- [Configuration Files](configuration.md) — ralph.yml, PROMPT.md, AGENTS.md structure
 - [Process Conventions](process.md) — label scheme and issue format

@@ -123,6 +123,7 @@ impl LocalCredentialStore {
 
 /// Connects to Secret Service and finds a collection by label.
 /// Returns the collection, or creates it if it doesn't exist.
+#[cfg(target_os = "linux")]
 fn get_or_create_collection<'a>(
     ss: &'a dbus_secret_service::SecretService,
     name: &str,
@@ -144,6 +145,7 @@ fn get_or_create_collection<'a>(
 }
 
 
+#[cfg(target_os = "linux")]
 fn connect_secret_service() -> Result<dbus_secret_service::SecretService> {
     dbus_secret_service::SecretService::connect(
         dbus_secret_service::EncryptionType::Plain,
@@ -162,31 +164,39 @@ fn connect_secret_service() -> Result<dbus_secret_service::SecretService> {
 /// When `collection_name` is Some, checks that specific collection.
 /// Otherwise checks the default collection.
 pub fn check_keyring_unlocked_for(collection_name: Option<&str>) -> Result<()> {
-    let ss = connect_secret_service()?;
+    #[cfg(target_os = "linux")]
+    {
+        let ss = connect_secret_service()?;
 
-    let collection = if let Some(name) = collection_name {
-        get_or_create_collection(&ss, name)?
-    } else {
-        ss.get_default_collection().map_err(|e| {
-            anyhow::anyhow!(
-                "No default keyring collection found. \
-                 Run `seahorse` or `gnome-keyring-daemon` to create one. ({})",
-                e
-            )
-        })?
-    };
+        let collection = if let Some(name) = collection_name {
+            get_or_create_collection(&ss, name)?
+        } else {
+            ss.get_default_collection().map_err(|e| {
+                anyhow::anyhow!(
+                    "No default keyring collection found. \
+                     Run `seahorse` or `gnome-keyring-daemon` to create one. ({})",
+                    e
+                )
+            })?
+        };
 
-    let locked = collection.is_locked().map_err(|e| {
-        anyhow::anyhow!("Cannot check keyring lock state: {}", e)
-    })?;
+        let locked = collection.is_locked().map_err(|e| {
+            anyhow::anyhow!("Cannot check keyring lock state: {}", e)
+        })?;
 
-    if locked {
-        anyhow::bail!(
-            "System keyring is locked. Unlock it before storing credentials.\n\
-             On GNOME: the keyring unlocks automatically on login.\n\
-             On headless systems: run `gnome-keyring-daemon --unlock` or \
-             set BM_BRIDGE_TOKEN_* environment variables instead."
-        );
+        if locked {
+            anyhow::bail!(
+                "System keyring is locked. Unlock it before storing credentials.\n\
+                 On GNOME: the keyring unlocks automatically on login.\n\
+                 On headless systems: run `gnome-keyring-daemon --unlock` or \
+                 set BM_BRIDGE_TOKEN_* environment variables instead."
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = collection_name;
     }
 
     Ok(())
@@ -197,7 +207,7 @@ pub fn check_keyring_unlocked() -> Result<()> {
     check_keyring_unlocked_for(None)
 }
 
-/// Store a secret in a named collection using dbus-secret-service directly.
+#[cfg(target_os = "linux")]
 fn dss_store(service: &str, member_name: &str, token: &str, collection_name: &str) -> Result<()> {
     let ss = connect_secret_service()?;
     let collection = get_or_create_collection(&ss, collection_name)?;
@@ -222,7 +232,12 @@ fn dss_store(service: &str, member_name: &str, token: &str, collection_name: &st
     Ok(())
 }
 
-/// Retrieve a secret from a named collection using dbus-secret-service directly.
+#[cfg(not(target_os = "linux"))]
+fn dss_store(_service: &str, _member_name: &str, _token: &str, _collection_name: &str) -> Result<()> {
+    anyhow::bail!("Custom collections are only supported on Linux via dbus-secret-service")
+}
+
+#[cfg(target_os = "linux")]
 fn dss_retrieve(service: &str, member_name: &str, collection_name: &str) -> Result<Option<String>> {
     let ss = connect_secret_service()?;
     let collection = match get_or_create_collection(&ss, collection_name) {
@@ -251,7 +266,12 @@ fn dss_retrieve(service: &str, member_name: &str, collection_name: &str) -> Resu
     }
 }
 
-/// Delete a secret from a named collection using dbus-secret-service directly.
+#[cfg(not(target_os = "linux"))]
+fn dss_retrieve(_service: &str, _member_name: &str, _collection_name: &str) -> Result<Option<String>> {
+    Ok(None) // Fall back to default behavior
+}
+
+#[cfg(target_os = "linux")]
 fn dss_delete(service: &str, member_name: &str, collection_name: &str) -> Result<()> {
     let ss = connect_secret_service()?;
     let collection = match get_or_create_collection(&ss, collection_name) {
@@ -268,6 +288,11 @@ fn dss_delete(service: &str, member_name: &str, collection_name: &str) -> Result
             let _ = item.delete();
         }
     }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn dss_delete(_service: &str, _member_name: &str, _collection_name: &str) -> Result<()> {
     Ok(())
 }
 

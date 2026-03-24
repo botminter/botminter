@@ -24,7 +24,7 @@ Diagnoses common BotMinter workspace issues. Runs checks against team workspaces
 | Workspace marker | `<workspace>/.botminter.workspace` | Workspace identity |
 | Team submodule | `<workspace>/team/` | Team repo as submodule |
 | Ralph config | `<workspace>/ralph.yml` | Member's Ralph Orchestrator config |
-| Context file | `<workspace>/CLAUDE.md` | Member's coding agent context |
+| Context file | `<workspace>/AGENTS.md` | Member's coding agent context |
 | Prompt file | `<workspace>/PROMPT.md` | Member's work objective |
 
 ## Running Diagnostics
@@ -70,7 +70,7 @@ Verify these files exist at the workspace root:
 
 ```bash
 test -f <workspace>/ralph.yml
-test -f <workspace>/CLAUDE.md
+test -f <workspace>/AGENTS.md
 test -f <workspace>/PROMPT.md
 ```
 
@@ -156,7 +156,7 @@ If `~/.botminter/config.yml` does not exist:
 |-------|--------|---------|
 | Workspace marker | OK | .botminter.workspace present |
 | Team submodule | WARN | Submodule is 3 commits behind remote |
-| Required files | OK | ralph.yml, CLAUDE.md, PROMPT.md present |
+| Required files | OK | ralph.yml, AGENTS.md, PROMPT.md present |
 | Symlinks | FAIL | 2 broken symlinks in .claude/agents/ |
 | Ralph lock | OK | No stale locks |
 | Git status | WARN | 4 uncommitted files |

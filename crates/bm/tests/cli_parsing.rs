@@ -19,6 +19,17 @@ fn bm(home: &Path) -> Command {
 /// Runtime errors (missing config, etc.) exit with 1 via anyhow.
 const CLAP_PARSE_ERROR_CODE: i32 = 2;
 
+fn test_profiles_dir(home: &Path) -> std::path::PathBuf {
+    #[cfg(target_os = "macos")]
+    let base = home.join("Library/Application Support");
+    #[cfg(target_os = "windows")]
+    let base = home.join("AppData/Roaming");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let base = home.join(".config");
+    
+    base.join("botminter").join("profiles")
+}
+
 // ── Command aliases (2 tests) ────────────────────────────────────────
 
 #[test]
@@ -651,13 +662,12 @@ fn subcommand_help_shows_new_commands() {
 fn profiles_describe_show_tags_outputs_tagged_files() {
     // Extract profiles to disk so the command can find them
     let profiles_tmp = tempfile::tempdir().unwrap();
-    let profiles_path = profiles_tmp.path().join("botminter").join("profiles");
+    let profiles_path = test_profiles_dir(profiles_tmp.path());
     std::fs::create_dir_all(&profiles_path).unwrap();
     bm::profile::extract_embedded_to_disk(&profiles_path).unwrap();
 
     let output = bm(profiles_tmp.path())
         .args(["profiles", "describe", "scrum", "--show-tags"])
-        .env("XDG_CONFIG_HOME", profiles_tmp.path())
         .output()
         .unwrap();
     assert!(output.status.success(), "bm profiles describe scrum --show-tags should succeed");
@@ -684,13 +694,12 @@ fn profiles_describe_show_tags_outputs_tagged_files() {
 fn profiles_describe_without_show_tags_omits_tag_section() {
     // Extract profiles to disk so the command can find them
     let profiles_tmp = tempfile::tempdir().unwrap();
-    let profiles_path = profiles_tmp.path().join("botminter").join("profiles");
+    let profiles_path = test_profiles_dir(profiles_tmp.path());
     std::fs::create_dir_all(&profiles_path).unwrap();
     bm::profile::extract_embedded_to_disk(&profiles_path).unwrap();
 
     let output = bm(profiles_tmp.path())
         .args(["profiles", "describe", "scrum"])
-        .env("XDG_CONFIG_HOME", profiles_tmp.path())
         .output()
         .unwrap();
     assert!(output.status.success(), "bm profiles describe scrum should succeed");
@@ -708,7 +717,6 @@ fn profiles_init_extracts_to_temp_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let output = bm(tmp.path())
         .args(["profiles", "init"])
-        .env("XDG_CONFIG_HOME", tmp.path())
         .output()
         .unwrap();
     assert!(
@@ -725,7 +733,7 @@ fn profiles_init_extracts_to_temp_dir() {
     );
 
     // Verify profiles were actually created on disk
-    let profiles_dir = tmp.path().join("botminter").join("profiles");
+    let profiles_dir = test_profiles_dir(tmp.path());
     assert!(
         profiles_dir.join("scrum").join("botminter.yml").exists(),
         "scrum profile should be extracted"
@@ -743,7 +751,6 @@ fn profiles_init_without_force_skips_on_piped_stdin() {
     // First run — extract
     let output1 = bm(tmp.path())
         .args(["profiles", "init"])
-        .env("XDG_CONFIG_HOME", tmp.path())
         .output()
         .unwrap();
     assert!(output1.status.success());
@@ -751,7 +758,6 @@ fn profiles_init_without_force_skips_on_piped_stdin() {
     // Second run — piped stdin (no TTY) means EOF → default to skip
     let output2 = bm(tmp.path())
         .args(["profiles", "init"])
-        .env("XDG_CONFIG_HOME", tmp.path())
         .output()
         .unwrap();
     assert!(output2.status.success());
@@ -776,14 +782,12 @@ fn profiles_init_force_overwrites() {
     // First run
     bm(tmp.path())
         .args(["profiles", "init"])
-        .env("XDG_CONFIG_HOME", tmp.path())
         .output()
         .unwrap();
 
     // Second run with --force — overwrites all silently
     let output = bm(tmp.path())
         .args(["profiles", "init", "--force"])
-        .env("XDG_CONFIG_HOME", tmp.path())
         .output()
         .unwrap();
     assert!(
@@ -827,7 +831,6 @@ fn profiles_init_extracts_minty_config() {
     let tmp = tempfile::tempdir().unwrap();
     let output = bm(tmp.path())
         .args(["profiles", "init"])
-        .env("XDG_CONFIG_HOME", tmp.path())
         .output()
         .unwrap();
     assert!(
@@ -844,7 +847,11 @@ fn profiles_init_extracts_minty_config() {
     );
 
     // Verify minty config was extracted alongside profiles
-    let minty_dir = tmp.path().join("botminter").join("minty");
+    // Minty goes in config directory/botminter/minty
+    let mut minty_dir = test_profiles_dir(tmp.path());
+    minty_dir.pop();
+    minty_dir.push("minty");
+    
     assert!(
         minty_dir.join("prompt.md").exists(),
         "Minty prompt.md should be extracted"
@@ -859,10 +866,10 @@ fn profiles_init_extracts_minty_config() {
     );
 
     // Verify minty is separate from profiles
-    let profiles_dir = tmp.path().join("botminter").join("profiles");
+    let profiles_dir = test_profiles_dir(tmp.path());
     assert!(
         profiles_dir.is_dir(),
-        "profiles/ should exist as sibling of minty/"
+        "profiles/ should exist"
     );
     assert!(
         !profiles_dir.join("minty").exists(),
@@ -1088,7 +1095,6 @@ fn profiles_list_auto_initializes_when_profiles_missing() {
     let tmp = tempfile::tempdir().unwrap();
     let output = bm(tmp.path())
         .args(["profiles", "list"])
-        .env("XDG_CONFIG_HOME", tmp.path())
         .output()
         .unwrap();
     assert!(
@@ -1117,13 +1123,12 @@ fn profiles_list_auto_initializes_when_profiles_missing() {
 fn profiles_list_skips_init_when_profiles_exist() {
     let tmp = tempfile::tempdir().unwrap();
     // Pre-populate profiles
-    let profiles_path = tmp.path().join("botminter").join("profiles");
+    let profiles_path = test_profiles_dir(tmp.path());
     std::fs::create_dir_all(&profiles_path).unwrap();
     bm::profile::extract_embedded_to_disk(&profiles_path).unwrap();
 
     let output = bm(tmp.path())
         .args(["profiles", "list"])
-        .env("XDG_CONFIG_HOME", tmp.path())
         .output()
         .unwrap();
     assert!(output.status.success());

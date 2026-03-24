@@ -22,7 +22,7 @@ Shows registered BotMinter teams with their members, roles, workspaces, and runn
 |--------|------|----------|
 | Team registry | `~/.botminter/config.yml` | Team names, paths, profiles, GitHub repos, credentials |
 | Team repo | `<team-path>/team/` | Member configs, knowledge, invariants |
-| Member config | `<team-path>/team/members/<member>/` | ralph.yml, PROMPT.md, CLAUDE.md |
+| Member config | `<team-path>/team/members/<member>/` | ralph.yml, PROMPT.md, AGENTS.md |
 | Workspace | `<team-path>/<member>/` | Workspace repo with `.botminter.workspace` marker |
 
 ## How to List Teams

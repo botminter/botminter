@@ -30,8 +30,8 @@ result: issue
 reported: "specs/milestones/completed/architect-first-epic/.mermaid/design_1771601621_74.mmd"
 severity: major
 
-### 5. CLAUDE.md References Updated
-expected: `CLAUDE.md` has no references to removed `specs/` paths (`specs/master-plan`, `specs/milestones`, `specs/prompts`, `specs/tasks`, `specs/presets`, `specs/design-principles`). New rows for `.planning/adrs/` and `.planning/specs/` appear in the Key Directories table.
+### 5. AGENTS.md References Updated
+expected: `AGENTS.md` has no references to removed `specs/` paths (`specs/master-plan`, `specs/milestones`, `specs/prompts`, `specs/tasks`, `specs/presets`, `specs/design-principles`). New rows for `.planning/adrs/` and `.planning/specs/` appear in the Key Directories table.
 result: pass
 
 ### 6. Conformance Tests Pass

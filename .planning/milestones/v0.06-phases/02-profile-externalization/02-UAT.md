@@ -36,7 +36,7 @@ result: pass
 agent-notes: `profiles list` showed well-formatted table with Profile, Version, Schema, Description columns. `profiles describe scrum` showed name, version, roles, labels, coding agents. Clear and informative.
 
 ### 6. Verbatim vs Filtered Extraction
-expected: Compare the disk profile at `~/.config/botminter/profiles/scrum/` with what `bm init` generates in a team repo. Disk profiles contain raw agent tags (+agent:claude-code / -agent markers visible in source files like context.md). Team repo extraction filters these tags and renames context.md to CLAUDE.md — producing agent-specific output.
+expected: Compare the disk profile at `~/.config/botminter/profiles/scrum/` with what `bm init` generates in a team repo. Disk profiles contain raw agent tags (+agent:claude-code / -agent markers visible in source files like context.md). Team repo extraction filters these tags and renames context.md to AGENTS.md — producing agent-specific output.
 result: pass
 agent-notes: Extracted files contain raw `<!-- +agent:claude-code -->` and `<!-- -agent -->` tags plus `# +agent:claude-code` in YAML. context.md shows full template source with agent-conditional blocks unprocessed.
 

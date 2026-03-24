@@ -390,8 +390,8 @@ impl CredentialStore for LocalCredentialStore {
 ### Pitfall 6: --push Flag Removal Breaks Existing Scripts
 **What goes wrong:** Removing `--push` from `bm teams sync` breaks any scripts or documentation that use the old flag.
 **Why it happens:** Alpha policy says breaking changes are expected, but the Alpha users still have muscle memory and existing scripts.
-**How to avoid:** Given Alpha policy, just remove it. But: update CLAUDE.md (which documents `bm teams sync --push`), all docs, and the help text. The new `--repos` flag is the replacement.
-**Warning signs:** CLAUDE.md describes `--push` flag that no longer exists.
+**How to avoid:** Given Alpha policy, just remove it. But: update AGENTS.md (which documents `bm teams sync --push`), all docs, and the help text. The new `--repos` flag is the replacement.
+**Warning signs:** AGENTS.md describes `--push` flag that no longer exists.
 
 ### Pitfall 7: Bridge Token Prompt During Hire in Non-Interactive Mode
 **What goes wrong:** `bm hire` tries to prompt for a bridge token in non-interactive contexts (CI, scripts) and blocks or crashes.
@@ -499,7 +499,7 @@ Categories:
 - **Docs** (MkDocs content: profiles, getting-started, reference): Remove references or update
 - **Source code** (`profile.rs`): The profile name is embedded at compile time; deletion of the directory removes it from `include_dir`
 - **README, RELEASE_NOTES**: Update references
-- **CLAUDE.md at project root**: No direct reference
+- **AGENTS.md at project root**: No direct reference
 
 ## State of the Art
 

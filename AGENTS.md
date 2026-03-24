@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -113,7 +113,7 @@ workzone/
       projects/
         <project>/                   # Submodule → project fork
       PROMPT.md                      # Copied from team/members/<member>/
-      CLAUDE.md                      # Copied from team/members/<member>/
+      AGENTS.md                      # Copied from team/members/<member>/
       ralph.yml                      # Copied from team/members/<member>/
       .claude/agents/                # Symlinks into team/ submodule paths
       .botminter.workspace           # Workspace marker file
@@ -238,4 +238,4 @@ Key rules:
 - You MUST use just test to validate any changes at least once before the task is done.
 - You MUST fix any failures even if they're unrelated to your changes. You CAN present the user the situation before you fix such irrelevant failures.
 - You MUST focus on improving the quality of the code and you SHOULD leave the code better than you found it.
-- You SHOULD suggest any improvement or enhancements to the code or to CLAUDE.md whenever an improvement presents itself.
+- You SHOULD suggest any improvement or enhancements to the code or to AGENTS.md whenever an improvement presents itself.

@@ -70,7 +70,7 @@ For more detail on a specific role, read the role's member skeleton:
 ls ~/.config/botminter/profiles/<name>/roles/<role>/
 ```
 
-This shows what files a member hired into this role receives (ralph.yml, PROMPT.md, CLAUDE.md, hats, skills, knowledge).
+This shows what files a member hired into this role receives (ralph.yml, PROMPT.md, AGENTS.md, hats, skills, knowledge).
 
 ## How to Show Status Workflow
 

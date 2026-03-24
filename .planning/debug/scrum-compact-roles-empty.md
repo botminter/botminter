@@ -35,7 +35,7 @@ started: After Phase 01 restructuring (members/ -> roles/ rename in commit 6499c
   timestamp: 2026-03-05T03:15:00Z
 
 - hypothesis: Bug in extract_dir_recursive_from_disk or context.md rename
-  evidence: Code correctly renames context.md -> CLAUDE.md and handles coding-agent/ dir; no path confusion
+  evidence: Code correctly renames context.md -> AGENTS.md and handles coding-agent/ dir; no path confusion
   timestamp: 2026-03-05T03:20:00Z
 
 ## Evidence

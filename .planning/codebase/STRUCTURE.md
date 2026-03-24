@@ -63,7 +63,7 @@ botminter/
 │   ├── scrum/                   # Full scrum profile (multi-role)
 │   └── scrum-compact/           # Compact solo profile (single "superman" role)
 │       ├── PROCESS.md           # Process conventions
-│       ├── context.md           # Role context (becomes CLAUDE.md)
+│       ├── context.md           # Role context (becomes AGENTS.md)
 │       ├── .schema/v1.yml       # Schema version marker
 │       ├── formations/          # Deployment formations
 │       │   ├── local/formation.yml
@@ -100,7 +100,7 @@ botminter/
 ├── Cargo.toml                   # Workspace manifest
 ├── Cargo.lock                   # Dependency lock
 ├── Justfile                     # Task runner recipes
-├── CLAUDE.md                    # Project instructions for Claude
+├── AGENTS.md                    # Project instructions for Claude
 ├── ralph.yml                    # Ralph config for developing botminter
 ├── PROMPT.md                    # -> specs/milestones/.../PROMPT.md
 ├── README.md                    # Project readme

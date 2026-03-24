@@ -147,7 +147,7 @@ bm chat <member> [-t <team>] [--hat <hat>] [--render-system-prompt]
     - `bm chat <member>` — hatless mode: agent has awareness of all hats, human drives the workflow
     - `bm chat <member> --hat executor` — hat-specific mode: agent is in character as that hat
     - `bm chat <member> --render-system-prompt` — prints the generated system prompt to stdout and exits (for debugging/inspection). Works with `--hat` too.
-- In normal mode: writes the meta-prompt to a temp file and launches the coding agent with `--append-system-prompt-file`, which gives the meta-prompt higher authority than `CLAUDE.md`
+- In normal mode: writes the meta-prompt to a temp file and launches the coding agent with `--append-system-prompt-file`, which gives the meta-prompt higher authority than `AGENTS.md`
 - Requires a workspace created by `bm teams sync`
 
 ### `bm minty`
@@ -171,7 +171,7 @@ bm minty [-t <team>]
 - **Agent resolution**:
     - With `-t`: uses the team's configured coding agent
     - Without `-t`: uses the default coding agent from the first available profile on disk
-- Uses `--append-system-prompt-file` to inject Minty's persona prompt, giving it higher authority than `CLAUDE.md`
+- Uses `--append-system-prompt-file` to inject Minty's persona prompt, giving it higher authority than `AGENTS.md`
 
 **Examples:**
 

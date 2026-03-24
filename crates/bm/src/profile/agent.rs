@@ -117,7 +117,7 @@ pub fn resolve_coding_agent<'a>(
 /// Scans profiles in order and returns the binary name from the first one
 /// that declares a default coding agent. Used by `bm minty` when no team
 /// is specified.
-pub fn resolve_agent_from_profiles() -> Result<String> {
+pub fn resolve_agent_def_from_profiles() -> Result<CodingAgentDef> {
     let profiles = super::list_profiles()?;
     if profiles.is_empty() {
         bail!(
@@ -129,7 +129,7 @@ pub fn resolve_agent_from_profiles() -> Result<String> {
         if let Ok(manifest) = super::read_manifest(name) {
             if !manifest.default_coding_agent.is_empty() {
                 if let Some(agent) = manifest.coding_agents.get(&manifest.default_coding_agent) {
-                    return Ok(agent.binary.clone());
+                    return Ok(agent.clone());
                 }
             }
         }
@@ -228,7 +228,7 @@ mod tests {
         };
         let agent = resolve_coding_agent(&team, &manifest).unwrap();
         assert_eq!(agent.name, "claude-code");
-        assert_eq!(agent.context_file, "CLAUDE.md");
+        assert_eq!(agent.context_file, "AGENTS.md");
     }
 
     #[test]

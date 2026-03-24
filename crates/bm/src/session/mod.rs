@@ -22,28 +22,30 @@ pub fn run_ralph_cmd(workspace: &Path, args: &[&str]) -> Result<String> {
 ///
 /// Spawns `claude` with the skill path, inheriting stdin/stdout/stderr
 /// so the user can interact. Blocks until the session ends.
-pub fn interactive_claude_session(
+pub fn interactive_agent_session(
     working_dir: &Path,
     skill_path: &Path,
     env_vars: &[(String, String)],
+    coding_agent: &crate::profile::CodingAgentDef,
 ) -> Result<()> {
-    interactive_claude_session_with_check(working_dir, skill_path, env_vars, |name| {
+    interactive_agent_session_with_check(working_dir, skill_path, env_vars, coding_agent, |name| {
         which::which(name).map(|_| ())
     })
 }
 
 /// Internal helper that accepts a binary-check closure for testability.
-fn interactive_claude_session_with_check<F>(
+fn interactive_agent_session_with_check<F>(
     working_dir: &Path,
     skill_path: &Path,
     env_vars: &[(String, String)],
+    coding_agent: &crate::profile::CodingAgentDef,
     check_binary: F,
 ) -> Result<()>
 where
     F: FnOnce(&str) -> Result<(), which::Error>,
 {
-    if check_binary("claude").is_err() {
-        bail!("'claude' not found in PATH. Install Claude Code first.");
+    if check_binary(&coding_agent.binary).is_err() {
+        bail!("'{}' not found in PATH. Install {} first.", coding_agent.binary, coding_agent.display_name);
     }
 
     // Read skill content and write to a temp file for --append-system-prompt-file
@@ -58,10 +60,13 @@ where
     std::io::Write::write_all(&mut tmp_file, skill_content.as_bytes())
         .context("Failed to write session prompt to temp file")?;
 
-    let mut cmd = Command::new("claude");
-    cmd.arg("--append-system-prompt-file")
-        .arg(tmp_file.path())
-        .current_dir(working_dir);
+    let mut cmd = Command::new(&coding_agent.binary);
+    if coding_agent.binary == "gemini" {
+        cmd.arg("--instruction").arg(skill_content);
+    } else {
+        cmd.arg("--append-system-prompt-file").arg(tmp_file.path());
+    }
+    cmd.current_dir(working_dir);
 
     // Pass environment variables
     for (key, value) in env_vars {
@@ -71,10 +76,10 @@ where
     // Interactive: inherit all stdio
     let status = cmd
         .status()
-        .context("Failed to launch Claude Code session")?;
+        .with_context(|| format!("Failed to launch {} session", coding_agent.display_name))?;
 
     if !status.success() {
-        bail!("Claude Code session exited with error");
+        bail!("{} session exited with error", coding_agent.display_name);
     }
 
     Ok(())
@@ -150,10 +155,19 @@ mod tests {
         let skill_path = tmp.path().join("SKILL.md");
         std::fs::write(&skill_path, "# Test skill").unwrap();
 
-        let err = interactive_claude_session_with_check(
+        let agent_def = crate::profile::CodingAgentDef {
+            name: "claude-code".into(),
+            display_name: "Claude Code".into(),
+            context_file: "AGENTS.md".into(),
+            agent_dir: ".claude".into(),
+            binary: "claude".into(),
+        };
+
+        let err = interactive_agent_session_with_check(
             tmp.path(),
             &skill_path,
             &[],
+            &agent_def,
             binary_not_found,
         )
         .expect_err("should error when claude binary not found");

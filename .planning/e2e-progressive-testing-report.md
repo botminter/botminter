@@ -49,7 +49,7 @@ Wipes HOME directory, re-installs stub ralph, profiles, git auth. Preserves tg-m
 2. The workspace repo already exists on GitHub (from pass 1), so it clones with `--recursive`
 3. The clone succeeds but **PROMPT.md is not in the cloned repo** on GitHub
 4. The workspace repo on GitHub only has: `.botminter.workspace`, `.gitmodules`, `projects/`, `team/`
-5. The surfaced files (`PROMPT.md`, `CLAUDE.md`, `ralph.yml`, `.claude/`) are missing from the GitHub repo
+5. The surfaced files (`PROMPT.md`, `AGENTS.md`, `ralph.yml`, `.claude/`) are missing from the GitHub repo
 
 **Why files are missing from GitHub:** During the first pass, `create_workspace_repo()` calls `assemble_workspace_repo_context()` which copies files from `team/members/superman-alice/` to the workspace root. But at that point, the `team/` submodule content may be empty (submodule added but not initialized), so the source files don't exist and the copies are silently skipped (guarded by `if src.exists()`). The files only appear locally later when `sync_workspace()` runs `git submodule update --remote` and then copies them.
 
@@ -110,7 +110,7 @@ Existing workspace repos were cloned without `--recursive`, leaving submodules u
 - `crates/bm/tests/e2e/main.rs` — progressive CLI args parsing
 - `crates/bm/tests/e2e/github.rs` — `TempRepo::from_existing()`
 - `crates/bm/tests/e2e/telegram.rs` — `TgMock::from_existing()`, `is_running()`, `into_parts()`
-- `CLAUDE.md` — progressive testing workflow documented
+- `AGENTS.md` — progressive testing workflow documented
 
 ## How to Resume
 

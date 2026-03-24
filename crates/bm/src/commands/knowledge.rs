@@ -116,10 +116,14 @@ pub fn interactive(team_flag: Option<&str>, _scope: Option<&str>) -> Result<()> 
         );
     }
 
-    crate::session::interactive_claude_session(
+    let manifest = profile::read_manifest_from(&team.profile, &profile::profiles_dir()?)?;
+    let coding_agent = profile::resolve_coding_agent(&team, &manifest)?;
+
+    crate::session::interactive_agent_session(
         &team_repo,
         &skill_path,
-        &profile::credentials_env(team),
+        &profile::credentials_env(&team),
+        coding_agent,
     )
 }
 

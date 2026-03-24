@@ -28,7 +28,7 @@ BotMinter is developed through incremental milestones. Each milestone builds on 
 Built the foundational infrastructure:
 
 - Profile skeleton — process-agnostic directory structure
-- `scrum` profile — PROCESS.md, CLAUDE.md, team knowledge/invariants
+- `scrum` profile — PROCESS.md, AGENTS.md, team knowledge/invariants
 - human-assistant member skeleton with three-hat model
 - Workspace model — clone project, embed team repo, surface config
 - Human-in-the-loop (HIL) via RObot — validated during development; available as an optional bridge on any profile
@@ -49,7 +49,7 @@ Deliverable: validated `ralph.yml` pattern adopted directly by later milestones.
 
 Added the architect as a second team member and validated two-member coordination:
 
-- Architect member skeleton (ralph.yml, PROMPT.md, CLAUDE.md, five hats)
+- Architect member skeleton (ralph.yml, PROMPT.md, AGENTS.md, five hats)
 - human-assistant evolution — new hats for epic creation, design gating
 - Epic lifecycle statuses in PROCESS.md
 - Two-member outer loop coordination validated with synthetic epics

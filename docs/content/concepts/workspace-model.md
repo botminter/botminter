@@ -13,7 +13,7 @@ workzone/
       team/                                       # Submodule → org/my-team (team repo)
       projects/
         my-project/                               # Submodule → org/my-project (fork)
-      CLAUDE.md                                   # Copied from team/members/<member>/CLAUDE.md
+      AGENTS.md                                   # Copied from team/members/<member>/AGENTS.md
       PROMPT.md                                   # Copied from team/members/<member>/PROMPT.md
       ralph.yml                                   # Copied from team/members/<member>/ralph.yml
       .claude/
@@ -29,11 +29,11 @@ The agent's working directory (CWD) is the workspace repo root. Projects are acc
 
 ## Context files
 
-Context files (CLAUDE.md, PROMPT.md, ralph.yml) are **copied** from the team submodule to the workspace root during `bm teams sync`. They are **tracked** in the workspace repo — committed, versioned, and directly visible to the agent.
+Context files (AGENTS.md, PROMPT.md, ralph.yml) are **copied** from the team submodule to the workspace root during `bm teams sync`. They are **tracked** in the workspace repo — committed, versioned, and directly visible to the agent.
 
 | File | Method | Update mechanism |
 |------|--------|-----------------|
-| `CLAUDE.md` | Copy | `bm teams sync` re-copies if team submodule version is newer |
+| `AGENTS.md` | Copy | `bm teams sync` re-copies if team submodule version is newer |
 | `PROMPT.md` | Copy | `bm teams sync` re-copies if team submodule version is newer |
 | `ralph.yml` | Copy | `bm teams sync` re-copies if team submodule version is newer |
 | `settings.local.json` | Copy | `bm teams sync` re-copies if present |
@@ -62,7 +62,7 @@ The `team/` submodule contains all team configuration:
 | Project knowledge | `team/projects/<project>/knowledge/` |
 | Project invariants | `team/projects/<project>/invariants/` |
 | Process conventions | `team/PROCESS.md` |
-| Team context | `team/CLAUDE.md` |
+| Team context | `team/AGENTS.md` |
 | Member configs | `team/members/<member>/` |
 
 Agents update the team submodule at the start of every board scan cycle (`git submodule update --remote team`) to stay current with team configuration changes.

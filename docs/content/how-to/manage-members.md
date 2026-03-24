@@ -50,7 +50,7 @@ After hiring a member, the `members/<role>/` directory contains the following st
 ```
 members/human-assistant/
 ├── PROMPT.md              # Role identity and behavioral rules
-├── CLAUDE.md              # Role context (workspace model, knowledge paths)
+├── AGENTS.md              # Role context (workspace model, knowledge paths)
 ├── ralph.yml              # Ralph orchestrator configuration
 ├── .botminter.yml         # Member metadata (role name, emoji)
 ├── knowledge/             # Role-specific knowledge
@@ -73,10 +73,10 @@ After hiring a member, you can customize its configuration:
 
 ### Modify prompts
 
-Edit `members/<role>/PROMPT.md` to change role identity and behavioral rules. Edit `members/<role>/CLAUDE.md` to update role context.
+Edit `members/<role>/PROMPT.md` to change role identity and behavioral rules. Edit `members/<role>/AGENTS.md` to update role context.
 
 !!! note
-    In workspaces, `PROMPT.md` and `CLAUDE.md` are copies from the `team/` submodule. Changes to the source files in the team repo propagate when agents run `bm teams sync` to re-copy from the updated submodule.
+    In workspaces, `PROMPT.md` and `AGENTS.md` are copies from the `team/` submodule. Changes to the source files in the team repo propagate when agents run `bm teams sync` to re-copy from the updated submodule.
 
 ### Add role-specific knowledge
 

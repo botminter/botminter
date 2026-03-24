@@ -348,7 +348,7 @@ mod tests {
 
         // Verify workspace is still correct
         assert!(ws.join("PROMPT.md").exists());
-        assert!(ws.join("CLAUDE.md").exists());
+        assert!(ws.join("AGENTS.md").exists());
         assert!(ws.join("ralph.yml").exists());
         assert!(ws.join(".claude/agents").is_dir());
         assert_eq!(fs::read_to_string(ws.join("PROMPT.md")).unwrap(), "# P");
@@ -448,7 +448,7 @@ mod tests {
 
         // Workspace should still be valid
         assert!(ws.join("PROMPT.md").exists());
-        assert!(ws.join("CLAUDE.md").exists());
+        assert!(ws.join("AGENTS.md").exists());
         assert!(ws.join("ralph.yml").exists());
     }
 }

@@ -6,14 +6,14 @@ Profile files under `profiles/` MUST use paths consistent with the workspace mod
 
 All path references in profile files (ralph.yml hat instructions, context.md workspace diagrams, knowledge resolution tables, invariant scoping tables) MUST use the current workspace model paths. When the workspace model changes, all profile files MUST be updated in the same changeset.
 
-The workspace model paths are defined by the `sync` command in `crates/bm/src/commands/sync.rs` and documented in the root `CLAUDE.md` under "Workspace Model."
+The workspace model paths are defined by the `sync` command in `crates/bm/src/commands/sync.rs` and documented in the root `AGENTS.md` under "Workspace Model."
 
 ## Applies To
 
 All files under `profiles/` that contain path references — primarily:
 - `profiles/*/members/*/ralph.yml` — hat instruction paths for skills, knowledge, invariants
 - `profiles/*/context.md` and `profiles/*/members/*/context.md` — workspace layout diagrams, resolution tables
-- `profiles/*/CLAUDE.md` and member-level equivalents
+- `profiles/*/AGENTS.md` and member-level equivalents
 
 Does NOT apply to:
 - Files under `specs/milestones/*/fixtures/` — historical snapshots
@@ -38,7 +38,7 @@ project-repo/
     invariants/                  # Team invariants
     team/<member>/               # Member config
   PROMPT.md → .botminter/...    # Symlinked
-  CLAUDE.md → .botminter/...    # Symlinked
+  AGENTS.md → .botminter/...    # Symlinked
   ralph.yml                      # Copied
 ```
 

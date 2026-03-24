@@ -86,7 +86,7 @@
 - `ralph-rc-test/` -- Minimal Ralph workspace for live RC integration test
   - `ralph.yml` -- RObot.rocketchat config
   - `PROMPT.md` -- Test agent instructions
-  - `CLAUDE.md` -- Test agent context
+  - `AGENTS.md` -- Test agent context
 
 ## Cleanup
 ```bash

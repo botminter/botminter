@@ -104,7 +104,7 @@ Each task was committed atomically:
 - `docs/content/getting-started/bootstrap-your-team.md` - Updated --push to --repos
 - `docs/content/how-to/launch-members.md` - Updated --push to --repos
 - `docs/content/concepts/workspace-model.md` - Updated --push to --repos
-- `CLAUDE.md` - Updated CLI reference for sync flags
+- `AGENTS.md` - Updated CLI reference for sync flags
 
 ## Decisions Made
 - Keyring operations are best-effort with warnings -- env var fallback (BM_BRIDGE_TOKEN_{NAME}) always works even without system keyring

@@ -27,7 +27,7 @@ re_verification:
 |---|-------|--------|----------|
 | 1 | Agent tag filter library processes +agent:NAME/-agent tags in HTML and Hash comment syntax | VERIFIED | `crates/bm/src/agent_tags.rs` exists with 22 references across the codebase. Regression: present. |
 | 2 | CodingAgentDef data model exists with profile-level default and team-level override resolution | VERIFIED | `CodingAgentDef` struct in profile.rs (28 refs), `resolve_coding_agent()` present. Regression: present. |
-| 3 | Profiles restructured -- coding-agent/ directory replaces agent/, context.md with inline tags replaces CLAUDE.md | VERIFIED | `profiles/scrum/coding-agent/` exists with agents/ and skills/. `profiles/scrum/context.md` exists. No `profiles/scrum/agent/` directory. |
+| 3 | Profiles restructured -- coding-agent/ directory replaces agent/, context.md with inline tags replaces AGENTS.md | VERIFIED | `profiles/scrum/coding-agent/` exists with agents/ and skills/. `profiles/scrum/context.md` exists. No `profiles/scrum/agent/` directory. |
 | 4 | Extraction transforms unified files to agent-specific -- filters tags and renames context.md | VERIFIED | `extract_dir_recursive_from_disk()` in profile.rs calls `agent_tags::filter_file()`. Regression: present. |
 | 5 | Workspace parameterization -- all hardcoded "claude-code" strings replaced with resolved agent config | VERIFIED | workspace.rs uses `coding_agent.context_file` and `coding_agent.agent_dir` (10 refs). Regression: present. |
 | 6 | Tests use isolated temp directories and do not write to real user paths | VERIFIED | 310 lib + 95 integration = 405 tests pass, 0 failures. Clippy clean (zero warnings). |

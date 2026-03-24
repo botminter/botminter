@@ -313,7 +313,7 @@ pub(super) mod tests {
         CodingAgentDef {
             name: "claude-code".into(),
             display_name: "Claude Code".into(),
-            context_file: "CLAUDE.md".into(),
+            context_file: "AGENTS.md".into(),
             agent_dir: ".claude".into(),
             binary: "claude".into(),
         }
@@ -325,7 +325,7 @@ pub(super) mod tests {
         let member_cfg = team_repo.join("members/arch-01");
         fs::create_dir_all(&member_cfg).unwrap();
         fs::write(member_cfg.join("PROMPT.md"), "# P").unwrap();
-        fs::write(member_cfg.join("CLAUDE.md"), "# C").unwrap();
+        fs::write(member_cfg.join("AGENTS.md"), "# C").unwrap();
         fs::write(member_cfg.join("ralph.yml"), "v: 1").unwrap();
         fs::create_dir_all(member_cfg.join("coding-agent/agents")).unwrap();
         fs::create_dir_all(team_repo.join("coding-agent/agents")).unwrap();
@@ -539,8 +539,8 @@ pub(super) mod tests {
             "team submodule should have member PROMPT.md"
         );
         assert!(
-            ws.join("team/members/arch-01/CLAUDE.md").exists(),
-            "team submodule should have member CLAUDE.md"
+            ws.join("team/members/arch-01/AGENTS.md").exists(),
+            "team submodule should have member AGENTS.md"
         );
         assert!(
             ws.join("team/members/arch-01/ralph.yml").exists(),
@@ -564,14 +564,14 @@ pub(super) mod tests {
         let ws = workspace_base.join("arch-01");
 
         // Context files should exist at workspace root as copies (not symlinks)
-        assert!(ws.join("CLAUDE.md").exists(), "CLAUDE.md at workspace root");
+        assert!(ws.join("AGENTS.md").exists(), "AGENTS.md at workspace root");
         assert!(ws.join("PROMPT.md").exists(), "PROMPT.md at workspace root");
         assert!(ws.join("ralph.yml").exists(), "ralph.yml at workspace root");
 
         // Verify they are regular files, not symlinks
         assert!(
-            !ws.join("CLAUDE.md").symlink_metadata().unwrap().file_type().is_symlink(),
-            "CLAUDE.md should be a copy, not a symlink"
+            !ws.join("AGENTS.md").symlink_metadata().unwrap().file_type().is_symlink(),
+            "AGENTS.md should be a copy, not a symlink"
         );
         assert!(
             !ws.join("PROMPT.md").symlink_metadata().unwrap().file_type().is_symlink(),
@@ -579,7 +579,7 @@ pub(super) mod tests {
         );
 
         // Verify content matches source
-        assert_eq!(fs::read_to_string(ws.join("CLAUDE.md")).unwrap(), "# C");
+        assert_eq!(fs::read_to_string(ws.join("AGENTS.md")).unwrap(), "# C");
         assert_eq!(fs::read_to_string(ws.join("PROMPT.md")).unwrap(), "# P");
         assert_eq!(fs::read_to_string(ws.join("ralph.yml")).unwrap(), "v: 1");
     }
@@ -593,7 +593,7 @@ pub(super) mod tests {
         let member_cfg = team_repo.join("members/arch-01");
         fs::create_dir_all(&member_cfg).unwrap();
         fs::write(member_cfg.join("PROMPT.md"), "# P").unwrap();
-        fs::write(member_cfg.join("CLAUDE.md"), "# C").unwrap();
+        fs::write(member_cfg.join("AGENTS.md"), "# C").unwrap();
         fs::write(member_cfg.join("ralph.yml"), "v: 1").unwrap();
 
         // Team-level agent
@@ -659,7 +659,7 @@ pub(super) mod tests {
         let member_cfg = team_repo.join("members/arch-01");
         fs::create_dir_all(&member_cfg).unwrap();
         fs::write(member_cfg.join("PROMPT.md"), "# P").unwrap();
-        fs::write(member_cfg.join("CLAUDE.md"), "# C").unwrap();
+        fs::write(member_cfg.join("AGENTS.md"), "# C").unwrap();
         fs::write(member_cfg.join("ralph.yml"), "v: 1").unwrap();
 
         // Team-level
@@ -771,7 +771,7 @@ pub(super) mod tests {
         let member_cfg = team_repo.join("members/arch-01");
         fs::create_dir_all(&member_cfg).unwrap();
         fs::write(member_cfg.join("PROMPT.md"), "# P").unwrap();
-        fs::write(member_cfg.join("CLAUDE.md"), "# C").unwrap();
+        fs::write(member_cfg.join("AGENTS.md"), "# C").unwrap();
         fs::write(member_cfg.join("ralph.yml"), "v: 1").unwrap();
         fs::create_dir_all(member_cfg.join("coding-agent/agents")).unwrap();
 

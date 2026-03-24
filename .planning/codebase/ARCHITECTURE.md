@@ -77,7 +77,7 @@
 
 1. `commands/teams.rs` loads config, resolves team
 2. `workspace.rs` creates workspace repo per member: git init, add team repo as submodule, add project forks as submodules
-3. Surfaces files: copies `PROMPT.md`, `CLAUDE.md`, `ralph.yml` from team repo member dir to workspace root
+3. Surfaces files: copies `PROMPT.md`, `AGENTS.md`, `ralph.yml` from team repo member dir to workspace root
 4. Creates symlinks for `.claude/agents/` and `.claude/skills/` pointing into team submodule
 5. Writes `.botminter.workspace` marker file with agent identification tags
 

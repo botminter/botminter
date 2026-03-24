@@ -103,7 +103,7 @@ bm projects add https://github.com/org/my-project.git
 bm teams sync
 ```
 
-This creates workspace repos for each member with the team repo as a `team/` submodule, project forks as `projects/` submodules, copied context files (PROMPT.md, CLAUDE.md, ralph.yml), and assembled `.claude/agents/`.
+This creates workspace repos for each member with the team repo as a `team/` submodule, project forks as `projects/` submodules, copied context files (PROMPT.md, AGENTS.md, ralph.yml), and assembled `.claude/agents/`.
 
 ### 5. Add project-specific knowledge
 
