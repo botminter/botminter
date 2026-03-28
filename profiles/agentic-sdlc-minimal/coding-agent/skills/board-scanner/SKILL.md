@@ -30,37 +30,16 @@ hat activations.
 git -C team pull --ff-only 2>/dev/null || true
 ```
 
-### 3. Auto-detect the team repo
+### 3. Fetch the board
 
-```bash
-TEAM_REPO=$(cd team && gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
-```
+Load the `github-project` skill and use its **board-view** operation to fetch
+all project items with their Status field values. The board-view operation
+handles repo detection, project ID caching, and item retrieval internally.
 
-If `gh repo view` fails (e.g., remote is a local path), extract from git remote:
+Use the results to identify each item's issue number and current status
+for dispatch.
 
-```bash
-TEAM_REPO=$(cd team && git remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')
-```
-
-### 4. Cache project IDs (once per scan cycle)
-
-```bash
-OWNER=$(echo "$TEAM_REPO" | cut -d/ -f1)
-PROJECT_NUM=$(gh project list --owner "$OWNER" --format json --jq '.projects[0].number')
-PROJECT_ID=$(gh project view "$PROJECT_NUM" --owner "$OWNER" --format json --jq '.id')
-FIELD_DATA=$(gh project field-list "$PROJECT_NUM" --owner "$OWNER" --format json)
-STATUS_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .id')
-```
-
-### 5. Query the project board
-
-```bash
-gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json
-```
-
-Parse the JSON to extract items with their Status field values.
-
-### 6. Log to poll-log.txt
+### 4. Log to poll-log.txt
 
 Use `$(date -u +%Y-%m-%dT%H:%M:%SZ)` for all timestamps.
 
@@ -70,18 +49,10 @@ Use `$(date -u +%Y-%m-%dT%H:%M:%SZ)` for all timestamps.
 2026-03-02T10:15:01Z — board.scan — END
 ```
 
-### 7. Auto-advance
+### 5. Auto-advance
 
-Before dispatching, handle auto-advance statuses. Use the cached IDs to
-transition statuses via `gh project item-edit`:
-
-```bash
-ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
-  --jq ".items[] | select(.content.number == $ISSUE_NUM) | .id")
-OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="<target-status>") | .id')
-gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
-  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
-```
+Before dispatching, handle auto-advance statuses using the `github-project`
+skill's operations:
 
 Transitions:
 
@@ -98,7 +69,7 @@ Auto-advance: eng:arch:sign-off → snt:gate:merge
 After auto-advancing all eligible issues, continue to dispatch with the
 updated board state.
 
-### 8. Dispatch
+### 6. Dispatch
 
 Dispatch based on the highest-priority project status found. Process one
 item at a time. Match each item's status against the tables below in order:
@@ -174,8 +145,9 @@ know which issue to work on.
 Before dispatching, count comments matching `Processing failed:` on the issue.
 
 - Count < 3 → dispatch normally.
-- Count >= 3 → set the issue's project status to `error` (via item-edit),
-  skip dispatch, add a comment:
+- Count >= 3 → use the `github-project` skill's **status-transition** operation
+  to set the issue's project status to `error`, skip dispatch, use the
+  **add-comment** operation to post:
   `"Issue #N failed 3 times: [last error]. Status set to error. Please investigate."`
   If RObot is enabled, also send a `ralph tools interact progress` notification.
 
@@ -183,10 +155,10 @@ Skip items with Status `error` during dispatch.
 
 ## Error Handling
 
-If any `gh` command fails during the scan:
+If any `github-project` skill operation fails during the scan:
 
 1. Log the error to `errors-log.txt` with the full command and output.
-2. If the failure is on a specific issue (item-edit, issue comment), skip
+2. If the failure is on a specific issue (status-transition, add-comment), skip
    that issue and continue scanning the rest.
 3. If the failure is systemic (project not found, auth failure), emit
    `LOOP_COMPLETE` and log the reason.
