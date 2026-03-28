@@ -179,7 +179,7 @@ release-notes tag notes_file="release-notes.md":
     echo "Release notes updated for ${TAG}"
 
 # Build locally and attach binary to an existing release (fallback if CI fails)
-release-build-local tag:
+release-build-local tag: console-build
     #!/usr/bin/env bash
     set -euo pipefail
     TAG="{{ tag }}"
