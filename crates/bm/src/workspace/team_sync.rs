@@ -19,6 +19,7 @@ pub struct TeamSyncParams<'a> {
     pub manifest: &'a ProfileManifest,
     pub coding_agent: &'a CodingAgentDef,
     pub github_repo: Option<&'a str>,
+    pub project_number: Option<u64>,
     pub repos: bool,
     pub verbose: bool,
     pub bridge_flag: bool,
@@ -126,6 +127,8 @@ pub fn sync_team_workspaces(params: &TeamSyncParams) -> Result<TeamSyncResult> {
                 params.coding_agent,
                 params.verbose,
                 params.repos,
+                params.project_number,
+                params.github_repo,
             )?;
             events.push(TeamSyncEvent::WorkspaceSynced {
                 name: member_dir_name.clone(),
@@ -141,6 +144,7 @@ pub fn sync_team_workspaces(params: &TeamSyncParams) -> Result<TeamSyncResult> {
                 team_name: params.team_name,
                 projects: &project_refs,
                 github_repo: params.github_repo,
+                project_number: params.project_number,
                 push: params.repos,
                 coding_agent: params.coding_agent,
                 remote_ops: gh_ops.as_ref().map(|o| o as &dyn workspace::RemoteRepoOps),

@@ -86,6 +86,8 @@ pub fn sync_workspace(
     coding_agent: &CodingAgentDef,
     verbose: bool,
     push: bool,
+    project_number: Option<u64>,
+    github_repo: Option<&str>,
 ) -> Result<SyncResult> {
     let mut result = SyncResult::default();
     let team_dir = ws_root.join("team");
@@ -186,6 +188,16 @@ pub fn sync_workspace(
         Vec::new()
     };
     let project_name_refs: Vec<&str> = project_names.iter().map(|s| s.as_str()).collect();
+
+    // Inject workspace context (unconditional — decoupled from copy_if_newer)
+    super::context::inject_workspace_context(
+        ws_root,
+        member_dir_name,
+        &coding_agent.context_file,
+        github_repo,
+        project_number,
+        &project_name_refs,
+    )?;
 
     // Re-assemble agent dir from team/ submodule paths (idempotent)
     assemble_agent_dir_submodule(ws_root, member_dir_name, &project_name_refs, coding_agent)?;
@@ -294,7 +306,7 @@ mod tests {
         );
         filetime::set_file_mtime(&source, now).unwrap();
 
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
 
         assert_eq!(
             fs::read_to_string(ws.join("ralph.yml")).unwrap(),
@@ -322,7 +334,7 @@ mod tests {
         fs::create_dir_all(&member_agents).unwrap();
         fs::write(member_agents.join("new-agent.md"), "# New Agent").unwrap();
 
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
 
         let new_count = fs::read_dir(&agents_dir)
             .unwrap()
@@ -346,8 +358,8 @@ mod tests {
         let (ws, member, agent) = setup_syncable_workspace(tmp.path());
 
         // Run sync twice
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
 
         // Verify workspace is still correct
         assert!(ws.join("PROMPT.md").exists());
@@ -381,7 +393,7 @@ mod tests {
         );
         filetime::set_file_mtime(&source, now).unwrap();
 
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
 
         // The workspace ralph.yml should have the updated content
         assert_eq!(
@@ -405,12 +417,12 @@ mod tests {
         let (ws, member, agent) = setup_syncable_workspace(tmp.path());
 
         // Sync once — no changes expected
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
 
         // Count commits before and after a second sync
         let log_before = git_cmd_output(&ws, &["rev-list", "--count", "HEAD"]).unwrap();
 
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
 
         let log_after = git_cmd_output(&ws, &["rev-list", "--count", "HEAD"]).unwrap();
         assert_eq!(
@@ -431,7 +443,7 @@ mod tests {
         assert_eq!(branch.trim(), member, "team/ should be on member branch");
 
         // Sync and verify branch is still correct (not detached HEAD)
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
 
         let branch = git_cmd_output(&team_sub, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap();
         assert_eq!(
@@ -488,7 +500,7 @@ mod tests {
         assert!(!ws.join(".claude/settings.json").exists());
 
         // assemble_agent_dir_submodule always copies settings.json unconditionally
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
 
         assert!(
             ws.join(".claude/settings.json").exists(),
@@ -509,8 +521,8 @@ mod tests {
         // Count commits before and after sync (settings.json already up-to-date)
         let log_before = git_cmd_output(&ws, &["rev-list", "--count", "HEAD"]).unwrap();
 
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
 
         let log_after = git_cmd_output(&ws, &["rev-list", "--count", "HEAD"]).unwrap();
         assert_eq!(
@@ -531,7 +543,7 @@ mod tests {
         let inbox_content = r#"{"ts":"2026-03-22T12:00:00Z","from":"brain","message":"test message"}"#;
         fs::write(ralph_dir.join("loop-inbox.jsonl"), inbox_content).unwrap();
 
-        sync_workspace(&ws, &member, &agent, false, false).unwrap();
+        sync_workspace(&ws, &member, &agent, false, false, None, None).unwrap();
 
         let inbox_after = fs::read_to_string(ralph_dir.join("loop-inbox.jsonl")).unwrap();
         assert_eq!(
@@ -547,11 +559,90 @@ mod tests {
         let (ws, member, agent) = setup_syncable_workspace(tmp.path());
 
         // Verbose mode should complete without error
-        sync_workspace(&ws, &member, &agent, true, false).unwrap();
+        sync_workspace(&ws, &member, &agent, true, false, None, None).unwrap();
 
         // Workspace should still be valid
         assert!(ws.join("PROMPT.md").exists());
         assert!(ws.join("CLAUDE.md").exists());
         assert!(ws.join("ralph.yml").exists());
+    }
+
+    #[test]
+    fn sync_injects_workspace_context() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (ws, member, agent) = setup_syncable_workspace(tmp.path());
+
+        // Add botminter.yml to the team submodule member dir
+        let member_dir = ws.join("team/members").join(&member);
+        fs::write(
+            member_dir.join("botminter.yml"),
+            "name: Arch One\nrole: architect\n",
+        )
+        .unwrap();
+
+        sync_workspace(
+            &ws,
+            &member,
+            &agent,
+            false,
+            false,
+            Some(99),
+            Some("testorg/test-team"),
+        )
+        .unwrap();
+
+        // Verify CLAUDE.md contains injected context
+        let claude_content = fs::read_to_string(ws.join("CLAUDE.md")).unwrap();
+        assert!(
+            claude_content.contains("<!-- BM:WORKSPACE_CONTEXT -->"),
+            "CLAUDE.md should contain context start marker after sync"
+        );
+        assert!(
+            claude_content.contains("| Team repo | `testorg/test-team` |"),
+            "CLAUDE.md should contain team repo after sync"
+        );
+        assert!(
+            claude_content.contains("| Project number | `99` |"),
+            "CLAUDE.md should contain project number after sync"
+        );
+        assert!(
+            claude_content.contains("| Member | `Arch One` |"),
+            "CLAUDE.md should contain member name after sync"
+        );
+
+        // Verify .botminter.workspace has KV pairs
+        let marker = fs::read_to_string(ws.join(".botminter.workspace")).unwrap();
+        assert!(
+            marker.contains("team_repo: testorg/test-team"),
+            ".botminter.workspace should contain team_repo after sync"
+        );
+        assert!(
+            marker.contains("project_number: 99"),
+            ".botminter.workspace should contain project_number after sync"
+        );
+    }
+
+    #[test]
+    fn sync_context_injection_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (ws, member, agent) = setup_syncable_workspace(tmp.path());
+
+        // Run sync twice with context params
+        sync_workspace(&ws, &member, &agent, false, false, Some(42), Some("org/repo")).unwrap();
+        let claude_1 = fs::read_to_string(ws.join("CLAUDE.md")).unwrap();
+
+        sync_workspace(&ws, &member, &agent, false, false, Some(42), Some("org/repo")).unwrap();
+        let claude_2 = fs::read_to_string(ws.join("CLAUDE.md")).unwrap();
+
+        assert_eq!(
+            claude_1, claude_2,
+            "Context injection should be idempotent across syncs"
+        );
+        // Only one set of markers
+        assert_eq!(
+            claude_2.matches("<!-- BM:WORKSPACE_CONTEXT -->").count(),
+            1,
+            "Should have exactly one start marker after multiple syncs"
+        );
     }
 }

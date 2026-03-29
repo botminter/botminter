@@ -84,6 +84,7 @@ fn do_sync(
         manifest: &manifest,
         coding_agent,
         github_repo: gh,
+        project_number: team.project_number,
         repos: false,
         verbose: true,
         bridge_flag: false,

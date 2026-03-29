@@ -29,6 +29,7 @@ pub fn sync(repos: bool, bridge_flag: bool, verbose: bool, team_flag: Option<&st
         manifest: &manifest,
         coding_agent,
         github_repo: gh,
+        project_number: team.project_number,
         repos,
         verbose,
         bridge_flag,
