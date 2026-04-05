@@ -150,8 +150,7 @@ pub(crate) mod minty {
 /// Returns the canonical disk path for Minty config.
 /// Resolves to `~/.config/botminter/minty/` on Linux/macOS.
 pub fn minty_dir() -> Result<PathBuf> {
-    let config = dirs::config_dir().context("Could not determine config directory")?;
-    Ok(config.join("botminter").join("minty"))
+    Ok(crate::profile::botminter_config_dir()?.join("minty"))
 }
 
 /// Reads the version field from an embedded profile's botminter.yml.

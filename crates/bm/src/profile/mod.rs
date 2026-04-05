@@ -28,6 +28,7 @@ pub use team_repo::{
     validate_bridge_selection, validate_knowledge_path, TeamSummary,
 };
 
+use std::env;
 use std::fs;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -164,11 +165,22 @@ pub fn list_roles_from(name: &str, base: &Path) -> Result<Vec<String>> {
     Ok(roles)
 }
 
-/// Returns the canonical disk path for externalized profiles.
-/// Resolves to `~/.config/botminter/profiles/` on Linux/macOS.
-pub fn profiles_dir() -> Result<PathBuf> {
+pub(crate) fn botminter_config_dir() -> Result<PathBuf> {
+    if let Some(xdg_config_home) = env::var_os("XDG_CONFIG_HOME") {
+        if !xdg_config_home.is_empty() {
+            return Ok(PathBuf::from(xdg_config_home).join("botminter"));
+        }
+    }
+
     let config = dirs::config_dir().context("Could not determine config directory")?;
-    Ok(config.join("botminter").join("profiles"))
+    Ok(config.join("botminter"))
+}
+
+/// Returns the canonical disk path for externalized profiles.
+/// Resolves to `$XDG_CONFIG_HOME/botminter/profiles/` when XDG_CONFIG_HOME is set,
+/// otherwise to the platform config directory (for example `~/.config/botminter/profiles/`).
+pub fn profiles_dir() -> Result<PathBuf> {
+    Ok(botminter_config_dir()?.join("profiles"))
 }
 
 /// Ensures profiles are available on disk. If missing, prompts the user (TTY) or

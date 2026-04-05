@@ -76,7 +76,7 @@ bm env create [-t <team>] [--formation <name>]
 
 **Behavior:**
 
-- For **local** formations: verifies that required tools (`ralph`, `keyring`, `gh`) are available
+- For **local** formations: verifies that the local runtime prerequisites are available (currently `ralph`; local bridge workflows also need `just` when used)
 - For future formation types (Lima, K8s): provisions the required infrastructure
 - Idempotent: re-running succeeds without errors
 

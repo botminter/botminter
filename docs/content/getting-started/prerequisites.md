@@ -145,7 +145,7 @@ When you hire a member with `bm hire`, BotMinter creates a GitHub App for that m
 3. Writes tokens to `hosts.yml` in each member's `GH_CONFIG_DIR`
 4. Refreshes tokens automatically at the 50-minute mark
 
-The `gh` CLI and `git` commands in member workspaces read credentials from `GH_CONFIG_DIR` automatically — no manual token management needed.
+The `gh` CLI and `git` commands in member workspaces read credentials from `GH_CONFIG_DIR` automatically — no manual token management needed. On local formations, BotMinter stores the long-lived App credentials in the system credential backend: macOS Keychain on macOS, Secret Service/keyring on Linux. Custom `keyring_collection` configuration is Linux-only.
 
 ## Next step
 

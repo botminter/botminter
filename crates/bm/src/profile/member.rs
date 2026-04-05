@@ -31,8 +31,21 @@ pub fn hire_member(
     name: Option<&str>,
     coding_agent: &CodingAgentDef,
 ) -> Result<HireResult> {
-    // Verify role exists in profile
-    let available_roles = super::list_roles(team_profile)?;
+    hire_member_from(team_repo, team_profile, role, name, coding_agent, None)
+}
+
+fn hire_member_from(
+    team_repo: &Path,
+    team_profile: &str,
+    role: &str,
+    name: Option<&str>,
+    coding_agent: &CodingAgentDef,
+    profiles_base: Option<&Path>,
+) -> Result<HireResult> {
+    let available_roles = match profiles_base {
+        Some(base) => super::list_roles_from(team_profile, base)?,
+        None => super::list_roles(team_profile)?,
+    };
     if !available_roles.contains(&role.to_string()) {
         bail!(
             "Role '{}' not available in profile '{}'. Available roles: {}",
@@ -42,7 +55,6 @@ pub fn hire_member(
         );
     }
 
-    // Determine member name
     let member_name = match name {
         Some(n) => n.to_string(),
         None => auto_suffix(team_repo, role)?,
@@ -59,19 +71,17 @@ pub fn hire_member(
         });
     }
 
-    // Extract member skeleton from embedded profile
     fs::create_dir_all(&member_dir)
         .with_context(|| format!("Failed to create member dir {}", member_dir.display()))?;
 
-    super::extract_member_to(team_profile, role, &member_dir, coding_agent)?;
+    match profiles_base {
+        Some(base) => super::extract_member_from(base, team_profile, role, &member_dir, coding_agent)?,
+        None => super::extract_member_to(team_profile, role, &member_dir, coding_agent)?,
+    }
 
-    // Finalize member manifest: .botminter.yml → botminter.yml with name added
     finalize_member_manifest(&member_dir, &member_name)?;
-
-    // Render {{member_dir}} placeholders in all text files
     render_member_placeholders(&member_dir, &member_dir_name, role, &member_name)?;
 
-    // Git add + commit (no auto-push)
     run_git(
         team_repo,
         &["add", &format!("members/{}/", member_dir_name)],
@@ -271,19 +281,10 @@ mod tests {
 
     #[test]
     fn hire_existing_member_returns_already_existed() {
-        // Set HOME to a temp dir so profiles_dir() resolves there
         let home = tempfile::tempdir().unwrap();
         let profiles_path = crate::profile::profiles_dir_for(home.path());
         fs::create_dir_all(&profiles_path).unwrap();
         crate::profile::extract_embedded_to_disk(&profiles_path).unwrap();
-
-        // Temporarily override HOME for list_roles() resolution
-        let orig_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", home.path());
-
-        // Set up minimal git config so commits work in the temp HOME
-        let gitconfig = home.path().join(".gitconfig");
-        fs::write(&gitconfig, "[user]\n\tname = Test\n\temail = test@test.com\n").unwrap();
 
         let team_tmp = tempfile::tempdir().unwrap();
         let team_repo = team_tmp.path();
@@ -294,28 +295,37 @@ mod tests {
             .get(&manifest.default_coding_agent)
             .unwrap();
 
-        // Bootstrap a minimal team repo
         crate::formation::setup_new_team_repo(
             team_repo, profile, &manifest, &[], &[], None, Some(&profiles_path),
         )
         .unwrap();
+        run_git(team_repo, &["config", "user.name", "Test"]).unwrap();
+        run_git(team_repo, &["config", "user.email", "test@test.com"]).unwrap();
 
-        // First hire — creates directory
-        let r1 = hire_member(team_repo, profile, "superman", Some("01"), coding_agent).unwrap();
+        let r1 = hire_member_from(
+            team_repo,
+            profile,
+            "superman",
+            Some("01"),
+            coding_agent,
+            Some(&profiles_path),
+        )
+        .unwrap();
         assert!(!r1.already_existed, "First hire should create a new member");
         assert_eq!(r1.member_dir_name, "superman-01");
 
-        // Second hire with same name — returns already_existed
-        let r2 = hire_member(team_repo, profile, "superman", Some("01"), coding_agent).unwrap();
+        let r2 = hire_member_from(
+            team_repo,
+            profile,
+            "superman",
+            Some("01"),
+            coding_agent,
+            Some(&profiles_path),
+        )
+        .unwrap();
         assert!(r2.already_existed, "Second hire should detect existing member");
         assert_eq!(r2.member_dir_name, "superman-01");
         assert_eq!(r2.member_name, "01");
-
-        // Restore HOME
-        match orig_home {
-            Some(h) => std::env::set_var("HOME", h),
-            None => std::env::remove_var("HOME"),
-        }
     }
 
     #[test]

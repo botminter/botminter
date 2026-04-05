@@ -29,8 +29,7 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 tempfile = "3"
-keyring = { version = "3", features = ["sync-secret-service"] }
-dbus-secret-service = { version = "4.1.0", features = ["vendored"] }
+keyring = "3"
 tokio = { version = "1", features = ["process", "io-util", "sync", "macros", "rt-multi-thread", "signal"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 sacp = "10.1.0"
@@ -52,6 +51,12 @@ tempfile = "3"
 filetime = "0.2"
 reqwest = { version = "0.12", features = ["blocking"] }
 libtest-mimic = "0.8"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }
+dbus-secret-service = { version = "4.1.0", features = ["vendored"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
 dbus-secret-service = { version = "4.1.0", features = ["vendored"] }
 
 [[bin]]

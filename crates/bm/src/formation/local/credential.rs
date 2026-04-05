@@ -1,14 +1,12 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
 use crate::formation::KeyValueCredentialStore;
 
-// ── Key tracking ─────────────────────────────────────────────────────
+#[cfg(target_os = "linux")]
+use std::collections::HashMap;
 
-/// Loads the set of known keys from a JSON tracking file.
-/// Returns an empty set if the file doesn't exist.
 fn load_tracked_keys(path: &Path) -> Result<Vec<String>> {
     if !path.exists() {
         return Ok(Vec::new());
@@ -18,7 +16,6 @@ fn load_tracked_keys(path: &Path) -> Result<Vec<String>> {
     Ok(keys)
 }
 
-/// Saves the set of known keys to a JSON tracking file.
 fn save_tracked_keys(path: &Path, keys: &[String]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -28,22 +25,21 @@ fn save_tracked_keys(path: &Path, keys: &[String]) -> Result<()> {
     Ok(())
 }
 
-// ── Keyring helpers (Secret Service / dbus-secret-service) ───────────
-
-/// Connects to the D-Bus Secret Service.
+#[cfg(target_os = "linux")]
 fn connect_secret_service() -> Result<dbus_secret_service::SecretService> {
-    dbus_secret_service::SecretService::connect(dbus_secret_service::EncryptionType::Plain)
-        .map_err(|e| {
+    dbus_secret_service::SecretService::connect(dbus_secret_service::EncryptionType::Plain).map_err(
+        |e| {
             anyhow::anyhow!(
                 "Cannot connect to Secret Service (D-Bus). \
                  Install a Secret Service provider (e.g., gnome-keyring) \
                  or use environment variable overrides instead. ({})",
                 e
             )
-        })
+        },
+    )
 }
 
-/// Finds or creates a collection by label.
+#[cfg(target_os = "linux")]
 fn get_or_create_collection<'a>(
     ss: &'a dbus_secret_service::SecretService,
     name: &str,
@@ -57,17 +53,18 @@ fn get_or_create_collection<'a>(
             }
         }
     }
+
     ss.create_collection(name, "")
         .map_err(|e| anyhow::anyhow!("Failed to create keyring collection '{}': {}", name, e))
 }
 
-/// Store a secret in a named collection via dbus-secret-service.
+#[cfg(target_os = "linux")]
 fn dss_store(service: &str, key: &str, value: &str, collection_name: &str) -> Result<()> {
     let ss = connect_secret_service()?;
     let collection = get_or_create_collection(&ss, collection_name)?;
-    collection.ensure_unlocked().map_err(|e| {
-        anyhow::anyhow!("Failed to unlock collection '{}': {}", collection_name, e)
-    })?;
+    collection
+        .ensure_unlocked()
+        .map_err(|e| anyhow::anyhow!("Failed to unlock collection '{}': {}", collection_name, e))?;
 
     let mut attrs = HashMap::new();
     attrs.insert("service", service);
@@ -78,7 +75,7 @@ fn dss_store(service: &str, key: &str, value: &str, collection_name: &str) -> Re
             &format!("{} — {}", service, key),
             attrs,
             value.as_bytes(),
-            true, // replace existing
+            true,
             "text/plain",
         )
         .map_err(|e| anyhow::anyhow!("Failed to store credential: {}", e))?;
@@ -86,7 +83,15 @@ fn dss_store(service: &str, key: &str, value: &str, collection_name: &str) -> Re
     Ok(())
 }
 
-/// Retrieve a secret from a named collection via dbus-secret-service.
+#[cfg(not(target_os = "linux"))]
+fn dss_store(_service: &str, _key: &str, _value: &str, collection_name: &str) -> Result<()> {
+    anyhow::bail!(
+        "Custom keyring collections are only supported on Linux (requested '{}')",
+        collection_name
+    )
+}
+
+#[cfg(target_os = "linux")]
 fn dss_retrieve(service: &str, key: &str, collection_name: &str) -> Result<Option<String>> {
     let ss = connect_secret_service()?;
     let collection = match get_or_create_collection(&ss, collection_name) {
@@ -115,7 +120,12 @@ fn dss_retrieve(service: &str, key: &str, collection_name: &str) -> Result<Optio
     }
 }
 
-/// Delete a secret from a named collection via dbus-secret-service.
+#[cfg(not(target_os = "linux"))]
+fn dss_retrieve(_service: &str, _key: &str, _collection_name: &str) -> Result<Option<String>> {
+    Ok(None)
+}
+
+#[cfg(target_os = "linux")]
 fn dss_delete(service: &str, key: &str, collection_name: &str) -> Result<()> {
     let ss = connect_secret_service()?;
     let collection = match get_or_create_collection(&ss, collection_name) {
@@ -135,7 +145,12 @@ fn dss_delete(service: &str, key: &str, collection_name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Checks if a keyring collection is unlocked.
+#[cfg(not(target_os = "linux"))]
+fn dss_delete(_service: &str, _key: &str, _collection_name: &str) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
 fn check_keyring_unlocked_for(collection_name: Option<&str>) -> Result<()> {
     let ss = connect_secret_service()?;
 
@@ -167,16 +182,14 @@ fn check_keyring_unlocked_for(collection_name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-// ── LocalKeyValueCredentialStore ─────────────────────────────────────
+#[cfg(not(target_os = "linux"))]
+fn check_keyring_unlocked_for(collection_name: Option<&str>) -> Result<()> {
+    if collection_name.is_some() {
+        anyhow::bail!("Custom keyring collections are only supported on Linux")
+    }
+    Ok(())
+}
 
-/// Key-value credential store backed by the system keyring.
-///
-/// Uses `keyring::Entry` for secret storage (or `dbus-secret-service` when
-/// a custom collection is configured). Since keyring doesn't support
-/// enumeration, a JSON file tracks known keys for `list_keys()`.
-///
-/// This store is formation-neutral — no bridge-state.json involvement.
-/// Bridge-specific metadata is managed by the bridge module independently.
 pub struct LocalKeyValueCredentialStore {
     service: String,
     keys_path: PathBuf,
@@ -192,19 +205,12 @@ impl LocalKeyValueCredentialStore {
         }
     }
 
-    /// Set a custom Secret Service collection name.
-    /// When set, bypasses `keyring::Entry` and uses `dbus-secret-service` directly.
-    #[allow(dead_code)] // Will be used when callers migrate to key-value store
+    #[allow(dead_code)]
     pub fn with_collection(mut self, collection: Option<String>) -> Self {
         self.collection = collection;
         self
     }
 
-    /// Run a closure with `BM_KEYRING_DBUS` as `DBUS_SESSION_BUS_ADDRESS` if set.
-    ///
-    /// This allows keyring operations to use an isolated D-Bus session while
-    /// the process-wide `DBUS_SESSION_BUS_ADDRESS` points to the real system bus
-    /// (needed by podman). Since `bm` is single-threaded, this is safe.
     fn with_keyring_dbus<T, F: FnOnce() -> T>(&self, f: F) -> T {
         if let Ok(dbus) = std::env::var("BM_KEYRING_DBUS") {
             let original = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
@@ -220,7 +226,6 @@ impl LocalKeyValueCredentialStore {
         }
     }
 
-    /// Add a key to the tracking file (idempotent).
     fn track_key(&self, key: &str) -> Result<()> {
         let mut keys = load_tracked_keys(&self.keys_path)?;
         if !keys.contains(&key.to_string()) {
@@ -231,7 +236,6 @@ impl LocalKeyValueCredentialStore {
         Ok(())
     }
 
-    /// Remove a key from the tracking file.
     fn untrack_key(&self, key: &str) -> Result<()> {
         let mut keys = load_tracked_keys(&self.keys_path)?;
         keys.retain(|k| k != key);
@@ -243,29 +247,20 @@ impl LocalKeyValueCredentialStore {
 impl KeyValueCredentialStore for LocalKeyValueCredentialStore {
     fn store(&self, key: &str, value: &str) -> Result<()> {
         self.with_keyring_dbus(|| {
-            if let Some(ref coll) = self.collection {
-                dss_store(&self.service, key, value, coll)?;
+            if let Some(ref collection) = self.collection {
+                dss_store(&self.service, key, value, collection)?;
             } else {
                 check_keyring_unlocked_for(None)?;
-
-                match keyring::Entry::new(&self.service, key) {
-                    Ok(entry) => {
-                        entry.set_password(value).map_err(|e| {
-                            anyhow::anyhow!(
-                                "Failed to store credential in system keyring for key '{}'. ({})",
-                                key,
-                                e
-                            )
-                        })?;
-                    }
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "Failed to create keyring entry for key '{}'. ({})",
-                            key,
-                            e
-                        ));
-                    }
-                }
+                let entry = keyring::Entry::new(&self.service, key).map_err(|e| {
+                    anyhow::anyhow!("Failed to create keyring entry for key '{}'. ({})", key, e)
+                })?;
+                entry.set_password(value).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to store credential in system keyring for key '{}'. ({})",
+                        key,
+                        e
+                    )
+                })?;
             }
 
             self.track_key(key)?;
@@ -275,12 +270,12 @@ impl KeyValueCredentialStore for LocalKeyValueCredentialStore {
 
     fn retrieve(&self, key: &str) -> Result<Option<String>> {
         self.with_keyring_dbus(|| {
-            if let Some(ref coll) = self.collection {
-                return dss_retrieve(&self.service, key, coll);
+            if let Some(ref collection) = self.collection {
+                return dss_retrieve(&self.service, key, collection);
             }
 
             let entry = match keyring::Entry::new(&self.service, key) {
-                Ok(e) => e,
+                Ok(entry) => entry,
                 Err(_) => return Ok(None),
             };
             match entry.get_password() {
@@ -293,8 +288,8 @@ impl KeyValueCredentialStore for LocalKeyValueCredentialStore {
 
     fn remove(&self, key: &str) -> Result<()> {
         self.with_keyring_dbus(|| {
-            if let Some(ref coll) = self.collection {
-                dss_delete(&self.service, key, coll)?;
+            if let Some(ref collection) = self.collection {
+                dss_delete(&self.service, key, collection)?;
             } else if let Ok(entry) = keyring::Entry::new(&self.service, key) {
                 match entry.delete_credential() {
                     Ok(()) => {}
@@ -310,10 +305,8 @@ impl KeyValueCredentialStore for LocalKeyValueCredentialStore {
 
     fn list_keys(&self, prefix: &str) -> Result<Vec<String>> {
         let keys = load_tracked_keys(&self.keys_path)?;
-        let mut filtered: Vec<String> = keys
-            .into_iter()
-            .filter(|k| k.starts_with(prefix))
-            .collect();
+        let mut filtered: Vec<String> =
+            keys.into_iter().filter(|k| k.starts_with(prefix)).collect();
         filtered.sort();
         Ok(filtered)
     }
@@ -323,15 +316,16 @@ impl KeyValueCredentialStore for LocalKeyValueCredentialStore {
 mod tests {
     use super::*;
 
-    // These tests use the key tracking file only (no real keyring).
-    // They verify the tracking file mechanics which are independent of keyring.
-
     #[test]
     fn track_and_list_keys() {
         let tmp = tempfile::tempdir().unwrap();
         let keys_path = tmp.path().join("keys.json");
 
-        save_tracked_keys(&keys_path, &["a/1".to_string(), "a/2".to_string(), "b/1".to_string()]).unwrap();
+        save_tracked_keys(
+            &keys_path,
+            &["a/1".to_string(), "a/2".to_string(), "b/1".to_string()],
+        )
+        .unwrap();
         let keys = load_tracked_keys(&keys_path).unwrap();
         assert_eq!(keys, vec!["a/1", "a/2", "b/1"]);
     }
@@ -357,13 +351,11 @@ mod tests {
     fn track_key_is_idempotent() {
         let tmp = tempfile::tempdir().unwrap();
         let keys_path = tmp.path().join("keys.json");
-        let store = LocalKeyValueCredentialStore::new(
-            "test-service".to_string(),
-            keys_path.clone(),
-        );
+        let store =
+            LocalKeyValueCredentialStore::new("test-service".to_string(), keys_path.clone());
 
         store.track_key("my-key").unwrap();
-        store.track_key("my-key").unwrap(); // duplicate
+        store.track_key("my-key").unwrap();
         let keys = load_tracked_keys(&keys_path).unwrap();
         assert_eq!(keys, vec!["my-key"]);
     }
@@ -372,12 +364,14 @@ mod tests {
     fn untrack_key_removes_from_file() {
         let tmp = tempfile::tempdir().unwrap();
         let keys_path = tmp.path().join("keys.json");
-        save_tracked_keys(&keys_path, &["a".to_string(), "b".to_string(), "c".to_string()]).unwrap();
+        save_tracked_keys(
+            &keys_path,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+        )
+        .unwrap();
 
-        let store = LocalKeyValueCredentialStore::new(
-            "test-service".to_string(),
-            keys_path.clone(),
-        );
+        let store =
+            LocalKeyValueCredentialStore::new("test-service".to_string(), keys_path.clone());
 
         store.untrack_key("b").unwrap();
         let keys = load_tracked_keys(&keys_path).unwrap();
@@ -390,10 +384,8 @@ mod tests {
         let keys_path = tmp.path().join("keys.json");
         save_tracked_keys(&keys_path, &["a".to_string()]).unwrap();
 
-        let store = LocalKeyValueCredentialStore::new(
-            "test-service".to_string(),
-            keys_path.clone(),
-        );
+        let store =
+            LocalKeyValueCredentialStore::new("test-service".to_string(), keys_path.clone());
 
         store.untrack_key("nonexistent").unwrap();
         let keys = load_tracked_keys(&keys_path).unwrap();
@@ -414,10 +406,7 @@ mod tests {
         )
         .unwrap();
 
-        let store = LocalKeyValueCredentialStore::new(
-            "test-service".to_string(),
-            keys_path,
-        );
+        let store = LocalKeyValueCredentialStore::new("test-service".to_string(), keys_path);
 
         let keys = store.list_keys("superman/").unwrap();
         assert_eq!(keys, vec!["superman/app-id", "superman/private-key"]);
@@ -427,16 +416,9 @@ mod tests {
     fn list_keys_empty_prefix_returns_all() {
         let tmp = tempfile::tempdir().unwrap();
         let keys_path = tmp.path().join("keys.json");
-        save_tracked_keys(
-            &keys_path,
-            &["a".to_string(), "b".to_string()],
-        )
-        .unwrap();
+        save_tracked_keys(&keys_path, &["a".to_string(), "b".to_string()]).unwrap();
 
-        let store = LocalKeyValueCredentialStore::new(
-            "test-service".to_string(),
-            keys_path,
-        );
+        let store = LocalKeyValueCredentialStore::new("test-service".to_string(), keys_path);
 
         let keys = store.list_keys("").unwrap();
         assert_eq!(keys, vec!["a", "b"]);
@@ -446,16 +428,9 @@ mod tests {
     fn list_keys_no_match_returns_empty() {
         let tmp = tempfile::tempdir().unwrap();
         let keys_path = tmp.path().join("keys.json");
-        save_tracked_keys(
-            &keys_path,
-            &["superman/id".to_string()],
-        )
-        .unwrap();
+        save_tracked_keys(&keys_path, &["superman/id".to_string()]).unwrap();
 
-        let store = LocalKeyValueCredentialStore::new(
-            "test-service".to_string(),
-            keys_path,
-        );
+        let store = LocalKeyValueCredentialStore::new("test-service".to_string(), keys_path);
 
         let keys = store.list_keys("batman/").unwrap();
         assert!(keys.is_empty());
@@ -466,10 +441,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let keys_path = tmp.path().join("nonexistent.json");
 
-        let store = LocalKeyValueCredentialStore::new(
-            "test-service".to_string(),
-            keys_path,
-        );
+        let store = LocalKeyValueCredentialStore::new("test-service".to_string(), keys_path);
 
         let keys = store.list_keys("").unwrap();
         assert!(keys.is_empty());
@@ -486,5 +458,21 @@ mod tests {
 
         let store = store.with_collection(Some("my-collection".to_string()));
         assert_eq!(store.collection, Some("my-collection".to_string()));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn custom_collection_store_fails_clearly_off_linux() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = LocalKeyValueCredentialStore::new(
+            "botminter.team.github-app".to_string(),
+            tmp.path().join("keys.json"),
+        )
+        .with_collection(Some("custom".to_string()));
+
+        let err = store.store("member/app-id", "123").unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Custom keyring collections are only supported on Linux"));
     }
 }

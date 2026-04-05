@@ -60,7 +60,7 @@ Credentials follow a strict path from collection to runtime injection:
 
 1. **Collection** -- During `bm bridge identity add` (external bridges: operator provides token) or `bm teams sync --bridge` (local bridges: auto-provisioned)
 2. **Config exchange** -- Bridge recipes write credentials to `$BRIDGE_CONFIG_DIR/config.json` (file-based, never stdout)
-3. **Storage** -- BotMinter stores credentials in the system keyring (local formations) via the CredentialStore trait
+3. **Storage** -- BotMinter stores credentials in the local system credential backend via the CredentialStore trait (macOS Keychain on macOS, Secret Service/system keyring on Linux)
 4. **Injection** -- At `bm start`, credentials are resolved from the keyring and injected as environment variables to each member's Ralph process
 
 **Key principle:** Secrets live in the keyring, never in `bridge-state.json`, `ralph.yml`, or `config.yml`. They are injected as environment variables at runtime.

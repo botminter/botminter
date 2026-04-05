@@ -8,19 +8,17 @@ pub mod start_members;
 pub mod stop_members;
 
 pub use self::init::{register_team, setup_new_team_repo};
-pub use self::local::create_local_formation;
 pub use self::launch::{
-    check_robot_enabled_mismatch, is_brain_member, launch_brain, BrainLaunchConfig, launch_ralph,
+    check_robot_enabled_mismatch, is_brain_member, launch_brain, launch_ralph, BrainLaunchConfig,
 };
+pub use self::local::create_local_formation;
 pub use self::local_topology::write_local_topology;
 pub use self::manager::{run_formation_manager, FormationManagerResult};
 pub use self::start_members::{
     auto_start_bridge, start_local_members, AppCredentialsCached, BridgeAutoStartOutcome,
     MemberLaunched, MemberSkipped, StartResult,
 };
-pub use self::stop_members::{
-    stop_local_members, BridgeStopOutcome, MemberStopped, StopResult,
-};
+pub use self::stop_members::{stop_local_members, BridgeStopOutcome, MemberStopped, StopResult};
 
 /// A member that failed during a start or stop operation.
 pub struct MemberFailed {
@@ -43,7 +41,7 @@ use crate::config::{BotminterConfig, TeamEntry};
 /// exposed to operators.
 ///
 /// Implementations: `LinuxLocalFormation` (local processes, system keyring),
-/// `MacosLocalFormation` (stub), `LimaFormation` (VM-based, future).
+/// `MacosLocalFormation` (local processes, macOS Keychain), `LimaFormation` (VM-based, future).
 pub trait Formation {
     /// Returns the formation name (e.g., "local", "lima", "k8s").
     fn name(&self) -> &str;
@@ -65,7 +63,10 @@ pub trait Formation {
     /// Returns a key-value credential store for the given domain.
     /// The store interface is simple: store(key, value) / retrieve(key).
     /// Each credential domain composes its own key conventions.
-    fn credential_store(&self, domain: CredentialDomain) -> Result<Box<dyn KeyValueCredentialStore>>;
+    fn credential_store(
+        &self,
+        domain: CredentialDomain,
+    ) -> Result<Box<dyn KeyValueCredentialStore>>;
 
     /// One-time setup for token delivery to a member.
     /// Creates GH_CONFIG_DIR, writes initial config, configures git
@@ -372,10 +373,7 @@ pub fn list_formations(team_repo: &Path) -> Result<Vec<String>> {
 /// 1. If `--formation` flag is specified, use that.
 /// 2. If no flag, check for formations dir → default to "local".
 /// 3. If no formations dir exists (v1 team), return None (legacy behavior).
-pub fn resolve_formation(
-    team_repo: &Path,
-    flag: Option<&str>,
-) -> Result<Option<String>> {
+pub fn resolve_formation(team_repo: &Path, flag: Option<&str>) -> Result<Option<String>> {
     match flag {
         Some(name) => {
             // Explicit flag — verify formation exists

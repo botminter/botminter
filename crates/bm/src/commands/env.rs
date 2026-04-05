@@ -5,7 +5,7 @@ use crate::formation::{self, SetupParams};
 
 /// Runs `bm env create` — prepares the runtime environment via `formation.setup()`.
 ///
-/// For a local formation, this verifies prerequisites (ralph, keyring, gh auth).
+/// For a local formation, this verifies prerequisites (currently `ralph`; bridge flows may also need `just`).
 /// For future formation types (Lima, K8s), this would provision infrastructure.
 pub fn create(team: Option<&str>, formation_flag: Option<&str>) -> Result<()> {
     super::ensure_profiles(true)?;
