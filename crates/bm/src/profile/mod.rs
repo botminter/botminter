@@ -17,6 +17,7 @@ pub use embedded::minty::extract_minty_to_disk;
 pub use extraction::{extract_member_to, extract_profile_from, extract_profile_to};
 pub(crate) use extraction::extract_member_from;
 pub use member::{auto_suffix, finalize_member_manifest, hire_member, HireResult};
+pub(crate) use member::render_member_placeholders;
 pub use manifest::{
     BridgeDef, CodingAgentDef, LabelDef, OperatorDef, ProfileManifest, ProjectDef, RoleDef,
     StatusDef, ViewDef,

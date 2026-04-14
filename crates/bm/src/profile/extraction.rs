@@ -152,6 +152,14 @@ fn extract_dir_recursive_from_disk(
             let content = fs::read_to_string(&path)
                 .with_context(|| format!("File {} is not valid UTF-8", rel.display()))?;
             let filtered = agent_tags::filter_file(&content, &filename, &coding_agent.name);
+            // Replace context.md references in content with the coding agent's
+            // context_file (e.g., CLAUDE.md). Profile templates use the agent-neutral
+            // name "context.md"; generated team repos need the resolved name.
+            let filtered = if coding_agent.context_file != "context.md" {
+                filtered.replace("context.md", &coding_agent.context_file)
+            } else {
+                filtered
+            };
             fs::write(&target_path, filtered.as_bytes()).with_context(|| {
                 format!("Failed to write {}", target_path.display())
             })?;
@@ -441,6 +449,55 @@ mod tests {
         assert!(output.path().join("GEMINI.md").exists(), "Mock agent should produce GEMINI.md in member dir");
         assert!(!output.path().join("CLAUDE.md").exists(), "Mock agent should not produce CLAUDE.md in member dir");
         assert!(!output.path().join("context.md").exists(), "Mock agent should not produce context.md in member dir");
+    }
+
+    #[test]
+    fn extract_profile_replaces_context_md_references_in_content() {
+        let (_profiles_tmp, base) = setup_disk_profiles();
+        let output = tempfile::tempdir().unwrap();
+        extract_profile_from(&base, "scrum", output.path(), &claude_code_agent()).unwrap();
+
+        let content = std::fs::read_to_string(output.path().join("CLAUDE.md")).unwrap();
+        assert!(
+            !content.contains("team/context.md"),
+            "Extracted CLAUDE.md should not contain stale 'team/context.md' references"
+        );
+    }
+
+    #[test]
+    fn extract_member_replaces_context_md_references_in_content() {
+        let (_profiles_tmp, base) = setup_disk_profiles();
+        let output = tempfile::tempdir().unwrap();
+        extract_member_from(&base, "scrum", "architect", output.path(), &claude_code_agent()).unwrap();
+
+        let content = std::fs::read_to_string(output.path().join("CLAUDE.md")).unwrap();
+        assert!(
+            !content.contains("team/context.md"),
+            "Extracted member CLAUDE.md should not contain stale 'team/context.md' references"
+        );
+    }
+
+    #[test]
+    fn extract_profile_mock_agent_replaces_context_md_with_agent_context_file() {
+        let mock_agent = CodingAgentDef {
+            name: "gemini-cli".into(),
+            display_name: "Gemini CLI".into(),
+            context_file: "GEMINI.md".into(),
+            agent_dir: ".gemini".into(),
+            binary: "gemini".into(),
+            system_prompt_flag: None,
+            skip_permissions_flag: None,
+        };
+        let (_profiles_tmp, base) = setup_disk_profiles();
+        let output = tempfile::tempdir().unwrap();
+        extract_profile_from(&base, "scrum", output.path(), &mock_agent).unwrap();
+
+        let content = std::fs::read_to_string(output.path().join("GEMINI.md")).unwrap();
+        assert!(
+            !content.contains("context.md"),
+            "Extracted GEMINI.md should not contain any 'context.md' references, got: {}",
+            content.lines().filter(|l| l.contains("context.md")).collect::<Vec<_>>().join("\n")
+        );
     }
 
     // --- Retrospective Skill Tests (Task 02) ---

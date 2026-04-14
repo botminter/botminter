@@ -64,6 +64,7 @@ pub fn setup_new_team_repo(
             profile::extract_member_to(selected_profile, role, &member_dir, coding_agent)?;
         }
         profile::finalize_member_manifest(&member_dir, name)?;
+        profile::render_member_placeholders(&member_dir, &member_dir_name, role, name)?;
     }
 
     for (proj_name, _url) in projects {
@@ -187,6 +188,48 @@ mod tests {
 
         assert!(team_repo.join("projects/my-app/knowledge").exists());
         assert!(team_repo.join("projects/my-app/invariants").exists());
+    }
+
+    #[test]
+    fn setup_new_team_repo_renders_member_placeholders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let team_repo = tmp.path().join("team");
+
+        // Set up git config for the test environment
+        let gitconfig = tmp.path().join(".gitconfig");
+        fs::write(&gitconfig, "[user]\n\tname = Test\n\temail = test@test.com\n").unwrap();
+        let orig_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", tmp.path());
+
+        let profiles_tmp = tempfile::tempdir().unwrap();
+        profile::embedded::extract_embedded_to_disk(profiles_tmp.path()).unwrap();
+        let manifest = profile::read_manifest_from("agentic-sdlc-minimal", profiles_tmp.path()).unwrap();
+
+        let members = vec![("engineer".to_string(), "bob".to_string())];
+        setup_new_team_repo(
+            &team_repo, "agentic-sdlc-minimal", &manifest,
+            &members, &[], None,
+            Some(profiles_tmp.path()),
+        ).unwrap();
+
+        let ralph_yml = team_repo.join("members/engineer-bob/ralph.yml");
+        assert!(ralph_yml.exists(), "Member ralph.yml should exist");
+
+        let content = fs::read_to_string(&ralph_yml).unwrap();
+        assert!(
+            !content.contains("{{member_dir}}"),
+            "ralph.yml should not contain unreplaced {{{{member_dir}}}} placeholders"
+        );
+        assert!(
+            content.contains("engineer-bob"),
+            "ralph.yml should contain the rendered member dir name 'engineer-bob'"
+        );
+
+        // Restore HOME
+        match orig_home {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
     }
 
     #[test]

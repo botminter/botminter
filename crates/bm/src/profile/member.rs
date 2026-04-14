@@ -159,7 +159,7 @@ pub fn finalize_member_manifest(member_dir: &Path, name: &str) -> Result<()> {
 /// Renders `{{member_dir}}`, `{{role}}`, and `{{member_name}}` placeholders
 /// in all text files within the member directory. Called during `bm hire`
 /// after the member skeleton is extracted and the manifest is finalized.
-fn render_member_placeholders(
+pub(crate) fn render_member_placeholders(
     member_dir: &Path,
     member_dir_name: &str,
     role: &str,
