@@ -5,6 +5,7 @@ use tokio::time::Instant;
 
 use crate::acp::{AcpClient, AcpConfig, AcpError, AcpEvent};
 
+use super::heartbeat::HeartbeatPending;
 use super::queue::PromptQueue;
 use super::types::{BrainMessage, BridgeOutput, MessageEnvelopes, Priority};
 
@@ -51,6 +52,8 @@ pub struct Multiplexer {
     shutdown_rx: mpsc::Receiver<()>,
     /// Timestamp of the last TurnComplete, used for heartbeat suppression.
     last_turn_completed: Option<Instant>,
+    /// Shared flag to clear when a heartbeat message is consumed (sent or suppressed).
+    heartbeat_pending: Option<HeartbeatPending>,
 }
 
 /// Handle for sending messages into the multiplexer.
@@ -155,6 +158,7 @@ impl Multiplexer {
             output_tx,
             shutdown_rx,
             last_turn_completed: None,
+            heartbeat_pending: None,
         };
 
         let input = MultiplexerInput { tx: input_tx };
@@ -162,6 +166,18 @@ impl Multiplexer {
         let shutdown = MultiplexerShutdown { tx: shutdown_tx };
 
         (mux, input, output, shutdown)
+    }
+
+    /// Set the heartbeat pending flag so the multiplexer can clear it
+    /// after consuming heartbeat messages (sent to ACP or suppressed).
+    pub fn set_heartbeat_pending(&mut self, pending: HeartbeatPending) {
+        self.heartbeat_pending = Some(pending);
+    }
+
+    fn clear_heartbeat_pending(&self) {
+        if let Some(ref p) = self.heartbeat_pending {
+            p.clear();
+        }
     }
 
     /// Run the multiplexer event loop.
@@ -241,6 +257,7 @@ impl Multiplexer {
                                             elapsed_secs = elapsed.as_secs(),
                                             "Suppressing heartbeat — too soon after last turn"
                                         );
+                                        self.clear_heartbeat_pending();
                                         continue;
                                     }
                                 }
@@ -255,6 +272,9 @@ impl Multiplexer {
                                 queue.push(message);
                             } else {
                                 // Send immediately
+                                if message.priority == Priority::Heartbeat {
+                                    self.clear_heartbeat_pending();
+                                }
                                 let prompt = message.to_prompt_with_envelope(&envelopes);
                                 tracing::info!(
                                     priority = %message.priority,
@@ -295,6 +315,9 @@ impl Multiplexer {
 
                             // Drain the queue by priority
                             if let Some(next_msg) = queue.pop() {
+                                if next_msg.priority == Priority::Heartbeat {
+                                    self.clear_heartbeat_pending();
+                                }
                                 let prompt = next_msg.to_prompt_with_envelope(&envelopes);
                                 tracing::debug!(
                                     priority = %next_msg.priority,

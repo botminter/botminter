@@ -53,7 +53,7 @@ async fn run_brain(
         env_vars: collect_env_vars(),
     };
 
-    let (mux, input, output, shutdown) = Multiplexer::new(config);
+    let (mut mux, input, output, shutdown) = Multiplexer::new(config);
 
     // Get raw senders for event watcher, heartbeat, and bridge reader
     let event_sender = input.sender();
@@ -108,8 +108,9 @@ async fn run_brain(
 
     // Spawn heartbeat
     let heartbeat_config = HeartbeatConfig::default();
-    let (heartbeat, heartbeat_shutdown, _pending) =
+    let (heartbeat, heartbeat_shutdown, pending) =
         Heartbeat::new(heartbeat_config, heartbeat_sender);
+    mux.set_heartbeat_pending(pending);
     let heartbeat_handle = tokio::spawn(async move {
         if let Err(e) = heartbeat.run().await {
             tracing::error!("Heartbeat error: {e}");
