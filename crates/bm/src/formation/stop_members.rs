@@ -228,8 +228,51 @@ fn kill_escalate(pid: u32) {
     unsafe {
         libc::kill(pid as i32, libc::SIGKILL);
     }
-    // SIGKILL is unconditional — brief wait for the kernel to reap.
+    // SIGKILL is unconditional — brief wait for the process to terminate.
+    // The reaper thread (from launch) calls waitpid() to clean up the zombie.
     thread::sleep(Duration::from_millis(200));
+}
+
+/// Handles bridge stop lifecycle. Returns an outcome the command can display.
+///
+/// Extracted from commands/stop.rs per ADR-0007 — domain logic must not live
+/// in command files.
+pub fn stop_bridge(
+    team: &TeamEntry,
+    cfg: &BotminterConfig,
+    bridge_flag: bool,
+) -> Result<Option<BridgeStopOutcome>> {
+    use crate::bridge::{self, BridgeStopResult};
+
+    let should_stop = bridge_flag || team.bridge_lifecycle.stop_on_down;
+    let team_repo = team.path.join("team");
+
+    let bridge_dir = match bridge::discover(&team_repo, &team.name)? {
+        Some(d) => d,
+        None => return Ok(None),
+    };
+
+    let state_path = bridge::state_path(&cfg.workzone, &team.name);
+    let mut b = bridge::Bridge::new(bridge_dir, state_path, team.name.clone())?;
+
+    if should_stop {
+        if b.is_local() && b.is_running() && which::which("just").is_ok() {
+            let bridge_name = b.bridge_name().to_string();
+            match b.stop()? {
+                BridgeStopResult::Stopped => {
+                    b.save()?;
+                    return Ok(Some(BridgeStopOutcome::Stopped(bridge_name)));
+                }
+                BridgeStopResult::External => {}
+            }
+        }
+    } else if b.is_local() && b.is_running() {
+        return Ok(Some(BridgeStopOutcome::LeftRunning(
+            b.bridge_name().to_string(),
+        )));
+    }
+
+    Ok(None)
 }
 
 #[cfg(test)]

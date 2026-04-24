@@ -1,9 +1,12 @@
 use anyhow::Result;
 
 use crate::config::{BotminterConfig, TeamEntry};
+use crate::daemon;
 use crate::formation::start_members::StartResult;
 use crate::formation::stop_members::StopResult;
-use crate::formation::{Formation, StartParams, StopParams};
+use crate::formation::{self, BridgeStopOutcome, Formation, StartParams, StopParams};
+use crate::state;
+use crate::workspace;
 
 /// Operator-facing API boundary wrapping a team entry and its formation.
 ///
@@ -11,11 +14,21 @@ use crate::formation::{Formation, StartParams, StopParams};
 /// free functions directly. The Team delegates to the formation trait, which
 /// delegates to platform-specific implementations.
 ///
-/// Bridge lifecycle (auto-start on `bm start`, auto-stop on `bm stop`) is
-/// NOT handled here — it's a command-layer concern per ADR-0008.
+/// Bridge lifecycle is orchestrated here (not in the formation, not in the
+/// command). The formation handles member lifecycle only per ADR-0008.
 pub struct Team<'a> {
     entry: &'a TeamEntry,
     formation: Box<dyn Formation>,
+}
+
+/// Full outcome of `Team::stop()` — members, bridge, and daemon.
+pub struct TeamStopResult {
+    pub members: StopResult,
+    pub bridge: Option<BridgeStopOutcome>,
+    pub daemon_stopped: bool,
+    /// True when an event source (polling/webhook) is configured and the
+    /// daemon is still running. Used by the command to print a notice.
+    pub daemon_events_active: bool,
 }
 
 impl<'a> Team<'a> {
@@ -49,7 +62,15 @@ impl<'a> Team<'a> {
         })
     }
 
-    /// Stop members via the formation.
+    /// Stop members, bridge, and optionally the daemon.
+    ///
+    /// Orchestrates three concerns:
+    /// 1. Member lifecycle — delegated to formation
+    /// 2. Bridge lifecycle — domain operation (not a formation concern)
+    /// 3. Daemon lifecycle:
+    ///    - `--all` → always stop daemon
+    ///    - No event source configured → auto-stop daemon (nothing to keep it alive)
+    ///    - Event source active → leave daemon running, report via `daemon_events_active`
     pub fn stop(
         &self,
         config: &BotminterConfig,
@@ -57,16 +78,139 @@ impl<'a> Team<'a> {
         force: bool,
         bridge_flag: bool,
         stop_all: bool,
-    ) -> Result<StopResult> {
-        self.formation.stop_members(&StopParams {
+    ) -> Result<TeamStopResult> {
+        let members = self.formation.stop_members(&StopParams {
             team: self.entry,
             config,
             member_filter,
             force,
-            bridge_flag,
-            stop_all,
+        })?;
+
+        let effective_bridge_flag = bridge_flag || stop_all;
+        let bridge = if member_filter.is_none() {
+            formation::stop_bridge(self.entry, config, effective_bridge_flag)?
+        } else {
+            None
+        };
+
+        // Daemon lifecycle: stop when --all, or when no event source keeps it useful.
+        // When stopping a single member, leave the daemon alone.
+        let has_events = self.entry.daemon.has_event_source();
+        let should_stop_daemon = stop_all
+            || (member_filter.is_none() && !has_events);
+
+        let daemon_stopped = if should_stop_daemon {
+            match daemon::query_status(&self.entry.name)? {
+                daemon::DaemonStatusInfo::Running { .. } => {
+                    daemon::stop_daemon(&self.entry.name)?;
+                    true
+                }
+                daemon::DaemonStatusInfo::NotRunning { .. } => false,
+            }
+        } else {
+            false
+        };
+
+        // When an event source is active and the daemon stays running,
+        // the command should warn the operator.
+        let daemon_events_active = has_events
+            && !daemon_stopped
+            && member_filter.is_none();
+
+        Ok(TeamStopResult {
+            members,
+            bridge,
+            daemon_stopped,
+            daemon_events_active,
         })
     }
+
+    /// Enable members for event-driven restart by the daemon.
+    /// With `now=true`, also starts the members.
+    pub fn enable(
+        &self,
+        config: &BotminterConfig,
+        member_filter: Option<&str>,
+        now: bool,
+    ) -> Result<EnableResult> {
+        let team_repo = self.entry.path.join("team");
+        let mut runtime_state = state::load()?;
+
+        let enabled = if let Some(member) = member_filter {
+            let key = format!("{}/{}", self.entry.name, member);
+            state::enable_member(&mut runtime_state, &key);
+            vec![member.to_string()]
+        } else {
+            let members_dir = team_repo.join("members");
+            let member_dirs = workspace::list_member_dirs(&members_dir)?;
+            for m in &member_dirs {
+                let key = format!("{}/{}", self.entry.name, m);
+                state::enable_member(&mut runtime_state, &key);
+            }
+            member_dirs
+        };
+        state::save(&runtime_state)?;
+
+        let start = if now {
+            Some(self.start(config, member_filter)?)
+        } else {
+            None
+        };
+
+        Ok(EnableResult { enabled, start })
+    }
+
+    /// Disable members from event-driven restart by the daemon.
+    /// With `now=true`, also stops the members.
+    pub fn disable(
+        &self,
+        config: &BotminterConfig,
+        member_filter: Option<&str>,
+        now: bool,
+    ) -> Result<DisableResult> {
+        let team_repo = self.entry.path.join("team");
+        let mut runtime_state = state::load()?;
+
+        let disabled = if let Some(member) = member_filter {
+            let key = format!("{}/{}", self.entry.name, member);
+            state::disable_member(&mut runtime_state, &key);
+            vec![member.to_string()]
+        } else {
+            let members_dir = team_repo.join("members");
+            let member_dirs = workspace::list_member_dirs(&members_dir)?;
+            for m in &member_dirs {
+                let key = format!("{}/{}", self.entry.name, m);
+                state::disable_member(&mut runtime_state, &key);
+            }
+            member_dirs
+        };
+        state::save(&runtime_state)?;
+
+        let stop = if now {
+            Some(self.formation.stop_members(&StopParams {
+                team: self.entry,
+                config,
+                member_filter,
+                force: false,
+            })?)
+        } else {
+            None
+        };
+
+        Ok(DisableResult { disabled, stop })
+    }
+}
+
+/// Outcome of `Team::enable()`.
+pub struct EnableResult {
+    pub enabled: Vec<String>,
+    pub start: Option<StartResult>,
+}
+
+/// Outcome of `Team::disable()`.
+pub struct DisableResult {
+    pub disabled: Vec<String>,
+    pub stop: Option<StopResult>,
 }
 
 #[cfg(test)]
@@ -215,6 +359,7 @@ mod tests {
             coding_agent: None,
             project_number: None,
             bridge_lifecycle: BridgeLifecycle::default(),
+            daemon: Default::default(),
             vm: None,
         }
     }
@@ -274,9 +419,11 @@ mod tests {
 
         let result = team.stop(&config, None, false, false, false).unwrap();
 
-        assert_eq!(result.stopped.len(), 1);
-        assert_eq!(result.stopped[0].name, "superman");
-        assert!(!result.stopped[0].forced);
+        assert_eq!(result.members.stopped.len(), 1);
+        assert_eq!(result.members.stopped[0].name, "superman");
+        assert!(!result.members.stopped[0].forced);
+        assert!(result.bridge.is_none());
+        assert!(!result.daemon_events_active);
     }
 
     #[test]
@@ -286,9 +433,8 @@ mod tests {
         let team = Team::new(&entry, Box::new(formation));
         let config = test_config();
 
-        // Force flag is passed through to formation
         let result = team.stop(&config, None, true, false, false).unwrap();
-        assert_eq!(result.stopped.len(), 1);
+        assert_eq!(result.members.stopped.len(), 1);
     }
 
     #[test]

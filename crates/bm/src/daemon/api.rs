@@ -71,6 +71,8 @@ pub struct StopMembersResponse {
     pub ok: bool,
     pub stopped: Vec<MemberStoppedInfo>,
     pub errors: Vec<MemberErrorInfo>,
+    #[serde(default)]
+    pub no_members_running: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -482,6 +484,7 @@ pub(super) async fn stop_members_handler(
             let has_errors = !stop_result.errors.is_empty();
             let resp = StopMembersResponse {
                 ok: !has_errors,
+                no_members_running: stop_result.no_members_running,
                 stopped: stop_result
                     .stopped
                     .into_iter()
@@ -779,6 +782,7 @@ fn start_loop_blocking(
     })?;
 
     let pid = child.id();
+    crate::formation::reap_child(child);
 
     Ok(StartLoopResponse {
         ok: true,
@@ -857,6 +861,7 @@ mod tests {
                 forced: true,
             }],
             errors: vec![],
+            no_members_running: false,
         };
         let json = serde_json::to_value(&resp).unwrap();
         assert_eq!(json["ok"], true);

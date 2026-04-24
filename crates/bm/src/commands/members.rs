@@ -28,15 +28,20 @@ pub fn list(team_flag: Option<&str>) -> Result<()> {
         .load_preset(UTF8_FULL_CONDENSED)
         .apply_modifier(UTF8_ROUND_CORNERS)
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
-        .set_header(vec!["Member", "Role", "Status"]);
+        .set_header(vec!["Member", "Role", "Status", "Enabled"]);
 
     for member in &member_dirs {
         let role = profile::read_member_role(&members_dir, member);
         let status = state::resolve_member_status(&runtime_state, &team.name, member);
-        table.add_row(vec![member.as_str(), role.as_str(), status.label()]);
+        let key = format!("{}/{}", team.name, member);
+        let enabled = if state::is_enabled(&runtime_state, &key) { "yes" } else { "-" };
+        table.add_row(vec![member.as_str(), role.as_str(), status.label(), enabled]);
     }
 
     println!("{table}");
+    println!();
+    println!("Enabled = daemon will auto-start this member when GitHub activity is detected (poll/webhook).");
+    println!("Change with `bm enable <member>` / `bm disable <member>`.");
     Ok(())
 }
 
@@ -70,6 +75,8 @@ pub fn show(member: &str, team_flag: Option<&str>) -> Result<()> {
         }
         MemberStatus::Stopped => println!("Status: stopped"),
     }
+    let key = format!("{}/{}", team.name, member);
+    println!("Enabled: {}", if state::is_enabled(&runtime_state, &key) { "yes" } else { "no" });
 
     // Workspace
     let ws_path = team.path.join(member);
@@ -103,6 +110,10 @@ pub fn show(member: &str, team_flag: Option<&str>) -> Result<()> {
     // Knowledge & invariants
     display_file_list("Knowledge", &profile::list_files_in_dir(&member_dir.join("knowledge")));
     display_file_list("Invariants", &profile::list_files_in_dir(&member_dir.join("invariants")));
+
+    println!();
+    println!("Enabled = daemon will auto-start this member when GitHub activity is detected (poll/webhook).");
+    println!("Change with `bm enable <member>` / `bm disable <member>`.");
     Ok(())
 }
 

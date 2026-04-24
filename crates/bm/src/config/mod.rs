@@ -48,9 +48,59 @@ pub struct TeamEntry {
     /// Bridge lifecycle configuration.
     #[serde(default, skip_serializing_if = "BridgeLifecycle::is_default")]
     pub bridge_lifecycle: BridgeLifecycle,
+    /// Daemon event configuration (polling/webhook).
+    #[serde(default, skip_serializing_if = "DaemonSettings::is_default")]
+    pub daemon: DaemonSettings,
     /// Optional Lima VM name this team is linked to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vm: Option<String>,
+}
+
+/// Controls how the daemon listens for GitHub events.
+///
+/// By default, neither polling nor webhook is enabled — the daemon starts
+/// as a pure supervisor (member lifecycle + token refresh) and stops
+/// automatically when all members stop.
+///
+/// When polling or webhook is enabled, the daemon stays alive after `bm stop`
+/// and may restart members on GitHub events. Members are marked "suspended"
+/// to prevent unwanted restarts.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DaemonSettings {
+    /// Poll GitHub Events API for activity. Default: false (opt-in).
+    #[serde(default)]
+    pub polling: bool,
+    /// Accept GitHub webhook pushes. Default: false (opt-in).
+    #[serde(default)]
+    pub webhook: bool,
+    /// Poll interval in seconds (only used when polling=true). Default: 60.
+    #[serde(default = "DaemonSettings::default_interval")]
+    pub interval: u64,
+}
+
+impl Default for DaemonSettings {
+    fn default() -> Self {
+        Self {
+            polling: false,
+            webhook: false,
+            interval: 60,
+        }
+    }
+}
+
+impl DaemonSettings {
+    fn default_interval() -> u64 {
+        60
+    }
+
+    fn is_default(&self) -> bool {
+        !self.polling && !self.webhook && self.interval == 60
+    }
+
+    /// Returns true if any event source is configured.
+    pub fn has_event_source(&self) -> bool {
+        self.polling || self.webhook
+    }
 }
 
 /// Controls bridge lifecycle relative to member start/stop.
@@ -297,6 +347,7 @@ mod tests {
                 coding_agent: None,
                 project_number: None,
                 bridge_lifecycle: Default::default(),
+            daemon: Default::default(),
                 vm: None,
             }],
             vms: Vec::new(),
@@ -358,6 +409,7 @@ mod tests {
                     coding_agent: None,
                     project_number: None,
                     bridge_lifecycle: Default::default(),
+            daemon: Default::default(),
                 vm: None,
                 },
                 TeamEntry {
@@ -369,6 +421,7 @@ mod tests {
                     coding_agent: None,
                     project_number: None,
                     bridge_lifecycle: Default::default(),
+            daemon: Default::default(),
                 vm: None,
                 },
             ],
@@ -396,6 +449,7 @@ mod tests {
                 coding_agent: None,
                 project_number: None,
                 bridge_lifecycle: Default::default(),
+            daemon: Default::default(),
                 vm: None,
             }],
             vms: Vec::new(),
@@ -467,6 +521,7 @@ mod tests {
                 coding_agent: None,
                 project_number: None,
                 bridge_lifecycle: Default::default(),
+            daemon: Default::default(),
                 vm: None,
             }],
             vms: Vec::new(),

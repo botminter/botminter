@@ -6,6 +6,8 @@ pub mod chat;
 pub mod credentials;
 pub mod debug;
 pub mod completions;
+pub mod disable;
+pub mod enable;
 pub mod env;
 pub mod daemon;
 pub mod fire;

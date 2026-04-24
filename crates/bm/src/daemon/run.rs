@@ -77,9 +77,9 @@ async fn run_daemon_async(
 ) -> Result<()> {
     // NOTE: Do NOT set SIGCHLD=SIG_IGN here. While it prevents zombie children,
     // it also breaks Command::output() (used by gh api in poll mode) because
-    // the auto-reaped child causes waitpid to return ECHILD. Fire-and-forget
-    // children are tracked by PID in state.json and killed on daemon shutdown
-    // via stop_local_members(force=true).
+    // the auto-reaped child causes waitpid to return ECHILD. Instead, each
+    // spawn site calls reap_child() which spawns a thread that waits on the
+    // Child handle, calling waitpid() to reap the process on exit.
 
     let paths = Arc::new(DaemonPaths::new(team_name)?);
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -215,6 +215,10 @@ async fn run_daemon_async(
     // Members are fire-and-forget (PIDs in state.json), so the daemon must
     // actively terminate them on shutdown. Use force=true to stay within the
     // 30s budget that stop_daemon() allows before SIGKILL'ing us.
+    //
+    // NOTE: This calls stop_local_members directly (not through the API handler),
+    // so it does NOT write suspended markers. This is intentional — the daemon
+    // itself is going away, so suspension is meaningless.
     daemon_log(&paths, "INFO", "Stopping members before exit...");
     let cleanup_team = team_name.to_string();
     let cleanup_cfg = app_config::load().ok();

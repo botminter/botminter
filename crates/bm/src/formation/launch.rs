@@ -1,7 +1,18 @@
 use std::fs;
-use std::process::Command;
+use std::process::{Child, Command};
 
 use anyhow::{Context, Result};
+
+/// Spawns a detached thread that calls `child.wait()`, triggering `waitpid()`
+/// so the child is reaped by the kernel instead of becoming a zombie.
+///
+/// SIGCHLD=SIG_IGN is not viable because it breaks `Command::output()` (used
+/// by `gh api` in poll mode). This per-child reaper is the alternative.
+pub(crate) fn reap_child(mut child: Child) {
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+}
 
 /// Launches `ralph run -p PROMPT.md` in the given workspace directory.
 /// Returns the child PID.
@@ -61,7 +72,9 @@ pub fn launch_ralph(
         format!("Failed to spawn ralph in {}", workspace.display())
     })?;
 
-    Ok(child.id())
+    let pid = child.id();
+    reap_child(child);
+    Ok(pid)
 }
 
 /// Configuration for launching a brain process, bundling bridge-related params.
@@ -160,7 +173,9 @@ pub fn launch_brain(config: &BrainLaunchConfig<'_>) -> Result<u32> {
         )
     })?;
 
-    Ok(child.id())
+    let pid = child.id();
+    reap_child(child);
+    Ok(pid)
 }
 
 /// Returns true if the workspace has a `brain-prompt.md` file,

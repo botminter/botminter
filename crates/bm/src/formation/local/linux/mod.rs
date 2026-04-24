@@ -14,7 +14,7 @@ use crate::formation::{
     KeyValueCredentialStore, MemberHandle, MemberStatus, SetupParams, StartParams, StopParams,
 };
 use crate::formation::start_members::{MemberLaunched, MemberSkipped, StartResult};
-use crate::formation::stop_members::StopResult;
+use crate::formation::stop_members::{MemberStopped, StopResult};
 use crate::state;
 
 /// Linux local formation — runs members as local processes on the operator's machine.
@@ -207,12 +207,17 @@ impl Formation for LinuxLocalFormation {
             Err(_) => {
                 // Daemon not running — start it first
                 eprintln!("Starting daemon for team '{}'...", self.team_name);
+                let mode = if params.team.daemon.polling {
+                    "poll"
+                } else {
+                    "webhook"
+                };
                 daemon::start_daemon(
                     &self.team_name,
                     params.team_repo,
-                    "poll",
+                    mode,
                     0, // OS-assigned port — avoids collisions between tests/teams
-                    60,
+                    params.team.daemon.interval,
                     "127.0.0.1",
                 )?;
                 // Connect to the newly started daemon
@@ -258,16 +263,49 @@ impl Formation for LinuxLocalFormation {
     }
 
     fn stop_members(&self, params: &StopParams) -> Result<StopResult> {
-        // Stop members directly via state.json + SIGTERM. Unlike start (which
-        // must go through the daemon to ensure process ownership), stopping is
-        // a local signal operation that doesn't need HTTP indirection. The daemon
-        // stays running — bridge lifecycle is handled at the command layer.
-        formation::stop_local_members(
-            params.team,
-            params.config,
-            params.member_filter,
-            params.force,
-        )
+        // Route through daemon HTTP API (symmetric with start_members).
+        // The daemon owns state.json — all state mutations go through it
+        // per ADR-0008. Fall back to direct stop if daemon is unreachable.
+        match DaemonClient::connect(&self.team_name) {
+            Ok(client) => {
+                let req = daemon::StopMembersRequest {
+                    member: params.member_filter.map(|s| s.to_string()),
+                    force: params.force,
+                };
+                let resp = client.stop_members(&req)?;
+
+                Ok(StopResult {
+                    stopped: resp
+                        .stopped
+                        .into_iter()
+                        .map(|m| MemberStopped {
+                            name: m.name,
+                            already_exited: m.already_exited,
+                            forced: m.forced,
+                        })
+                        .collect(),
+                    errors: resp
+                        .errors
+                        .into_iter()
+                        .map(|m| formation::MemberFailed {
+                            name: m.name,
+                            error: m.error,
+                        })
+                        .collect(),
+                    no_members_running: resp.no_members_running,
+                    topology_removed: false,
+                })
+            }
+            Err(_) => {
+                // Daemon not running — fall back to direct stop.
+                formation::stop_local_members(
+                    params.team,
+                    params.config,
+                    params.member_filter,
+                    params.force,
+                )
+            }
+        }
     }
 
     fn member_status(&self) -> Result<Vec<MemberStatus>> {

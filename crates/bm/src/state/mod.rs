@@ -5,7 +5,7 @@ pub use dashboard::{
     RalphMemberInfo, StatusInfo, SubmoduleRow, VerboseDisplay, WorkspaceVerbose,
 };
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -22,6 +22,11 @@ const STATE_FILE: &str = "state.json";
 pub struct RuntimeState {
     #[serde(default)]
     pub members: HashMap<String, MemberRuntime>,
+    /// Members opted into event-driven restart via `bm enable`.
+    /// The daemon's poll/webhook loop only starts members in this set.
+    /// Keys use the same format as `members`: "team_name/member_name".
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+    pub enabled: HashSet<String>,
 }
 
 /// Runtime info for a single running member.
@@ -108,6 +113,10 @@ pub fn is_alive(pid: u32) -> bool {
 }
 
 /// Status of a team member process.
+///
+/// Enable/disable is NOT a status — it's an orthogonal property stored
+/// separately in `RuntimeState.enabled`. A disabled member can be
+/// Running, Crashed, or Stopped.
 #[derive(Debug)]
 pub enum MemberStatus {
     Running {
@@ -133,7 +142,7 @@ impl MemberStatus {
     }
 }
 
-/// Resolves state for display/inspection by external callers.
+/// Resolves runtime status for display/inspection by external callers.
 pub fn resolve_member_status(
     state: &RuntimeState,
     team_name: &str,
@@ -157,6 +166,32 @@ pub fn resolve_member_status(
         }
         None => MemberStatus::Stopped,
     }
+}
+
+// ── Enable/disable helpers ───────────────────────────────────────
+
+/// Adds a member to the enabled set (eligible for event-driven restart).
+pub fn enable_member(state: &mut RuntimeState, key: &str) {
+    state.enabled.insert(key.to_string());
+}
+
+/// Removes a member from the enabled set.
+pub fn disable_member(state: &mut RuntimeState, key: &str) {
+    state.enabled.remove(key);
+}
+
+/// Returns true if a member is in the enabled set.
+pub fn is_enabled(state: &RuntimeState, key: &str) -> bool {
+    state.enabled.contains(key)
+}
+
+/// Returns enabled member keys for a team.
+pub fn enabled_members(state: &RuntimeState, team_name: &str) -> Vec<String> {
+    let prefix = format!("{}/", team_name);
+    state.enabled.iter()
+        .filter(|k| k.starts_with(&prefix))
+        .cloned()
+        .collect()
 }
 
 /// Removes entries for dead processes from state. Returns the keys that were cleaned.
@@ -371,5 +406,74 @@ mod tests {
         let state: RuntimeState = serde_json::from_str(json).unwrap();
         let rt = state.members.get("team/member").unwrap();
         assert!(!rt.brain_mode, "brain_mode should default to false");
+    }
+
+    // ── Enable/disable ─────────────────────────────────────────
+
+    #[test]
+    fn enabled_backward_compat_deserialization() {
+        let json = r#"{ "members": {} }"#;
+        let state: RuntimeState = serde_json::from_str(json).unwrap();
+        assert!(state.enabled.is_empty());
+    }
+
+    #[test]
+    fn enabled_round_trip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("state.json");
+
+        let mut state = RuntimeState::default();
+        enable_member(&mut state, "team/alice");
+        enable_member(&mut state, "team/bob");
+        save_to(&path, &state).unwrap();
+
+        let loaded = load_from(&path).unwrap();
+        assert!(loaded.enabled.contains("team/alice"));
+        assert!(loaded.enabled.contains("team/bob"));
+        assert_eq!(loaded.enabled.len(), 2);
+    }
+
+    #[test]
+    fn disable_member_removes_from_set() {
+        let mut state = RuntimeState::default();
+        enable_member(&mut state, "team/alice");
+        assert!(is_enabled(&state, "team/alice"));
+
+        disable_member(&mut state, "team/alice");
+        assert!(!is_enabled(&state, "team/alice"));
+    }
+
+    #[test]
+    fn enabled_members_filters_by_team() {
+        let mut state = RuntimeState::default();
+        enable_member(&mut state, "team-a/alice");
+        enable_member(&mut state, "team-a/bob");
+        enable_member(&mut state, "team-b/carol");
+
+        let members = enabled_members(&state, "team-a");
+        assert_eq!(members.len(), 2);
+        assert!(members.contains(&"team-a/alice".to_string()));
+        assert!(members.contains(&"team-a/bob".to_string()));
+    }
+
+    #[test]
+    fn new_member_not_enabled_by_default() {
+        let state = RuntimeState::default();
+        assert!(!is_enabled(&state, "team/new-member"));
+    }
+
+    #[test]
+    fn enabled_not_serialized_when_empty() {
+        let state = RuntimeState::default();
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(!json.contains("enabled"));
+    }
+
+    #[test]
+    fn enabled_does_not_affect_member_status() {
+        let mut state = RuntimeState::default();
+        enable_member(&mut state, "team/member");
+        let status = resolve_member_status(&state, "team", "member");
+        assert_eq!(status.label(), "stopped");
     }
 }

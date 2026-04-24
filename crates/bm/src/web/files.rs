@@ -600,6 +600,7 @@ mod tests {
                 coding_agent: None,
                 project_number: None,
                 bridge_lifecycle: Default::default(),
+            daemon: Default::default(),
                 vm: None,
             }],
             vms: Vec::new(),

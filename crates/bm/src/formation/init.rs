@@ -103,6 +103,7 @@ pub fn register_team(
         coding_agent: None,
         project_number: None,
         bridge_lifecycle: Default::default(),
+        daemon: Default::default(),
         vm: None,
     };
     cfg.teams.push(team_entry);
@@ -259,7 +260,8 @@ mod tests {
             coding_agent: None,
             project_number: None,
             bridge_lifecycle: Default::default(),
-        vm: None,
+            daemon: Default::default(),
+            vm: None,
         });
         cfg.default_team = Some("my-team".to_string());
 

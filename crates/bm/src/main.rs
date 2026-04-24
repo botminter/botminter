@@ -247,6 +247,12 @@ fn main() -> Result<()> {
         Command::Stop { member, team, force, bridge, all } => {
             commands::stop::run(team.as_deref(), force, member.as_deref(), bridge, all)?;
         }
+        Command::Enable { member, team, now } => {
+            commands::enable::run(member.as_deref(), team.as_deref(), now)?;
+        }
+        Command::Disable { member, team, now } => {
+            commands::disable::run(member.as_deref(), team.as_deref(), now)?;
+        }
         Command::Status { team, verbose } => {
             commands::status::run(team.as_deref(), verbose)?;
         }

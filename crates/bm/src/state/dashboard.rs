@@ -41,6 +41,7 @@ pub struct MemberRow {
     pub role: String,
     pub status: MemberStatus,
     pub branch: String,
+    pub enabled: bool,
 }
 
 /// Bridge status info for display.
@@ -132,11 +133,14 @@ pub fn gather_status(
         if matches!(&status, MemberStatus::Crashed { .. }) {
             crashed_keys.push(format!("{}/{}", team_name, name));
         }
+        let key = format!("{}/{}", team_name, name);
+        let enabled = super::is_enabled(&runtime_state, &key);
         members.push(MemberRow {
             name: name.clone(),
             role,
             status,
             branch,
+            enabled,
         });
     }
 

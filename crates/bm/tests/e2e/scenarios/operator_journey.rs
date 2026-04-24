@@ -742,6 +742,12 @@ fn daemon_start_poll_fn(_gh_token: String) -> impl Fn(&mut TestEnv) + Send + std
         let _ = fs::remove_file(ws.join(".ralph-stub-env"));
         let _ = fs::remove_file(ws.join(".ralph-stub-matrix-response"));
 
+        // Enable the member for event-driven restart — daemon poll only
+        // launches members in the enabled set.
+        env.command("bm")
+            .args(["enable", MEMBER_DIR, "-t", TEAM_NAME])
+            .run();
+
         // Pre-seed poll state with the current latest event ID so the daemon
         // doesn't treat pre-existing GitHub events (from the first pass or
         // previous cases) as new activity.
@@ -863,6 +869,11 @@ fn daemon_sigkill_escalation_fn(_gh_token: String) -> impl Fn(&mut TestEnv) + Se
         let sigterm_log = ws.join(".ralph-stub-sigterm.log");
         let _ = fs::remove_file(&sigterm_log);
         let _ = fs::remove_file(ws.join(".ralph-stub-pid"));
+
+        // Enable the member for event-driven restart by daemon poll.
+        env.command("bm")
+            .args(["enable", MEMBER_DIR, "-t", TEAM_NAME])
+            .run();
 
         let _guard = DaemonGuard::new(env, TEAM_NAME);
         let mut cmd = env.command("bm");

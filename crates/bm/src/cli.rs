@@ -163,6 +163,34 @@ pub enum Command {
         all: bool,
     },
 
+    /// Enable members for event-driven restart by the daemon
+    Enable {
+        /// Optional member to enable (enables all if omitted)
+        member: Option<String>,
+
+        /// Team to operate on
+        #[arg(short, long)]
+        team: Option<String>,
+
+        /// Also start the member(s) immediately
+        #[arg(long)]
+        now: bool,
+    },
+
+    /// Disable members from event-driven restart by the daemon
+    Disable {
+        /// Optional member to disable (disables all if omitted)
+        member: Option<String>,
+
+        /// Team to operate on
+        #[arg(short, long)]
+        team: Option<String>,
+
+        /// Also stop the member(s) immediately
+        #[arg(long)]
+        now: bool,
+    },
+
     /// Status dashboard
     Status {
         /// Team to operate on

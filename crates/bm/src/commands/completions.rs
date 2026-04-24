@@ -355,6 +355,7 @@ mod tests {
                         coding_agent: None,
                         project_number: None,
                         bridge_lifecycle: Default::default(),
+            daemon: Default::default(),
                         vm: None,
                     },
                     TeamEntry {
@@ -366,6 +367,7 @@ mod tests {
                         coding_agent: None,
                         project_number: None,
                         bridge_lifecycle: Default::default(),
+            daemon: Default::default(),
                         vm: None,
                     },
                 ],
@@ -393,6 +395,7 @@ mod tests {
                 coding_agent: None,
                 project_number: None,
                 bridge_lifecycle: Default::default(),
+            daemon: Default::default(),
                 vm: None,
             }),
             team_repo: None,
@@ -484,6 +487,8 @@ projects:
                 Command::Minty { .. } => {}
                 Command::Start { .. } => {}
                 Command::Stop { .. } => {}
+                Command::Enable { .. } => {}
+                Command::Disable { .. } => {}
                 Command::Status { .. } => {}
                 Command::Teams { command } => match command {
                     TeamsCommand::List => {}

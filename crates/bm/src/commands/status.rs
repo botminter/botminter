@@ -54,7 +54,7 @@ pub fn run(team_flag: Option<&str>, verbose: bool) -> Result<()> {
         .load_preset(UTF8_FULL_CONDENSED)
         .apply_modifier(UTF8_ROUND_CORNERS)
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
-        .set_header(vec!["Member", "Role", "Status", "Branch", "Started", "PID"]);
+        .set_header(vec!["Member", "Role", "Status", "Enabled", "Branch", "Started", "PID"]);
 
     for m in &info.members {
         let (label, started, pid_str) = match &m.status {
@@ -67,16 +67,21 @@ pub fn run(team_flag: Option<&str>, verbose: bool) -> Result<()> {
             }
             MemberStatus::Stopped => ("stopped", "—".to_string(), "—".to_string()),
         };
+        let enabled = if m.enabled { "yes" } else { "-" };
         table.add_row(vec![
             m.name.as_str(),
             &m.role,
             label,
+            enabled,
             &m.branch,
             &started,
             &pid_str,
         ]);
     }
     println!("{table}");
+    println!();
+    println!("Enabled = daemon will auto-start this member when GitHub activity is detected (poll/webhook).");
+    println!("Change with `bm enable <member>` / `bm disable <member>`.");
 
     // Bridge
     if let Some(b) = &info.bridge {

@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::config;
 use crate::daemon::{self, DaemonStatusInfo};
+use crate::state;
 
 /// Handles `bm daemon start`.
 pub fn start(
@@ -62,11 +63,27 @@ pub fn status(team_flag: Option<&str>) -> Result<()> {
             } else {
                 println!("Team: {}", team.name);
             }
+
+            let runtime_state = state::load().unwrap_or_default();
+            let enabled = state::enabled_members(&runtime_state, &team.name);
+            if enabled.is_empty() {
+                println!("Enabled members: none");
+            } else {
+                let mut names: Vec<&str> = enabled.iter()
+                    .map(|k| k.strip_prefix(&format!("{}/", team.name)).unwrap_or(k))
+                    .collect();
+                names.sort();
+                println!("Enabled members: {}", names.join(", "));
+            }
         }
         DaemonStatusInfo::NotRunning { reason } => {
             println!("Daemon: {}", reason);
         }
     }
+
+    println!();
+    println!("Enabled = daemon will auto-start this member when GitHub activity is detected (poll/webhook).");
+    println!("Change with `bm enable <member>` / `bm disable <member>`.");
 
     Ok(())
 }

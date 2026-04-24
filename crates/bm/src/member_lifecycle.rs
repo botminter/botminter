@@ -294,8 +294,6 @@ fn stop_member(
         config,
         member_filter: Some(member),
         force: false,
-        bridge_flag: false,
-        stop_all: false,
     })?;
 
     if result.no_members_running {

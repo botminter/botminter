@@ -12,7 +12,8 @@ pub use self::local::create_local_formation;
 // Low-level process spawners — internal to the formation module.
 // The public entry point for member launch is `start_local_members`.
 pub(crate) use self::launch::{
-    check_robot_enabled_mismatch, is_brain_member, launch_brain, BrainLaunchConfig, launch_ralph,
+    check_robot_enabled_mismatch, is_brain_member, launch_brain, reap_child, BrainLaunchConfig,
+    launch_ralph,
 };
 pub use self::local_topology::write_local_topology;
 pub use self::manager::{run_formation_manager, FormationManagerResult};
@@ -21,7 +22,7 @@ pub use self::start_members::{
     MemberLaunched, MemberSkipped, StartResult,
 };
 pub use self::stop_members::{
-    stop_local_members, BridgeStopOutcome, MemberStopped, StopResult,
+    stop_bridge, stop_local_members, BridgeStopOutcome, MemberStopped, StopResult,
 };
 
 /// A member that failed during a start or stop operation.
@@ -181,15 +182,14 @@ pub struct StartParams<'a> {
 }
 
 /// Parameters for `Formation::stop_members()`.
+///
+/// Bridge lifecycle and daemon lifecycle are NOT formation concerns — they are
+/// orchestrated by `Team::stop()` per ADR-0008.
 pub struct StopParams<'a> {
     pub team: &'a TeamEntry,
     pub config: &'a BotminterConfig,
     pub member_filter: Option<&'a str>,
     pub force: bool,
-    pub bridge_flag: bool,
-    /// When true, also shut down the daemon after stopping members.
-    /// Corresponds to `bm stop --all`.
-    pub stop_all: bool,
 }
 
 /// Status of a single member in the formation.
