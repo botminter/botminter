@@ -73,6 +73,10 @@ exploratory-test-clean:
 console-test:
     cd {{ generator_root }}/console && npm test && npm run check
 
+# Run console Playwright e2e tests (builds console first, serves via vite preview)
+console-e2e:
+    cd {{ generator_root }}/console && npm run build && npx playwright test
+
 # Run console dev server (Vite + HMR at localhost:5173)
 console-dev:
     cd {{ generator_root }}/console && npm run dev
