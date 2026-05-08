@@ -115,13 +115,27 @@ pub fn inject_workspace_context(
 /// If markers already exist, the section between them is replaced.
 /// Otherwise, the section is appended to the end.
 fn inject_section(content: &str, section: &str) -> String {
+    inject_section_with_markers(content, section, CONTEXT_START_MARKER, CONTEXT_END_MARKER)
+}
+
+/// Generic marker-based section injection.
+///
+/// Finds the start and end markers in content. If both exist, replaces
+/// everything between them (inclusive). Otherwise appends to the end.
+/// Handles both markdown markers (`<!-- BM:TAG -->`) and YAML comment
+/// markers (`# <!-- BM:TAG -->`).
+fn inject_section_with_markers(
+    content: &str,
+    section: &str,
+    start_marker: &str,
+    end_marker: &str,
+) -> String {
     if let (Some(start_idx), Some(end_idx)) = (
-        content.find(CONTEXT_START_MARKER),
-        content.find(CONTEXT_END_MARKER),
+        content.find(start_marker),
+        content.find(end_marker),
     ) {
-        // Replace existing section (markers inclusive)
         let before = content[..start_idx].trim_end();
-        let after_end = end_idx + CONTEXT_END_MARKER.len();
+        let after_end = end_idx + end_marker.len();
         let after = content[after_end..].trim_start_matches('\n');
         if after.is_empty() {
             format!("{}\n\n{}", before, section)
@@ -129,7 +143,6 @@ fn inject_section(content: &str, section: &str) -> String {
             format!("{}\n\n{}\n{}", before, section, after)
         }
     } else {
-        // Append to end
         let trimmed = content.trim_end();
         format!("{}\n\n{}", trimmed, section)
     }
@@ -184,6 +197,176 @@ fn update_or_add_kv(lines: &mut Vec<String>, key: &str, value: &str) {
     } else {
         lines.push(new_line);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Project-aware marker injection
+// ---------------------------------------------------------------------------
+
+const PROJECT_SKILL_DIRS_START: &str = "# <!-- BM:PROJECT_SKILL_DIRS -->";
+const PROJECT_SKILL_DIRS_END: &str = "# <!-- /BM:PROJECT_SKILL_DIRS -->";
+
+const WORKSPACE_LAYOUT_START: &str = "<!-- BM:WORKSPACE_LAYOUT -->";
+const WORKSPACE_LAYOUT_END: &str = "<!-- /BM:WORKSPACE_LAYOUT -->";
+
+const PROJECT_CONTEXT_START: &str = "<!-- BM:PROJECT_CONTEXT -->";
+const PROJECT_CONTEXT_END: &str = "<!-- /BM:PROJECT_CONTEXT -->";
+
+const PROJECT_KNOWLEDGE_START: &str = "<!-- BM:PROJECT_KNOWLEDGE -->";
+const PROJECT_KNOWLEDGE_END: &str = "<!-- /BM:PROJECT_KNOWLEDGE -->";
+
+const PROJECT_INVARIANTS_START: &str = "<!-- BM:PROJECT_INVARIANTS -->";
+const PROJECT_INVARIANTS_END: &str = "<!-- /BM:PROJECT_INVARIANTS -->";
+
+/// Injects project skill dirs into ralph.yml between markers.
+pub fn inject_project_skill_dirs(ralph_yml_path: &Path, projects: &[&str]) -> Result<()> {
+    if !ralph_yml_path.exists() {
+        return Ok(());
+    }
+    let content = fs::read_to_string(ralph_yml_path)
+        .context("Failed to read ralph.yml")?;
+
+    if !content.contains(PROJECT_SKILL_DIRS_START) {
+        return Ok(());
+    }
+
+    let lines: Vec<String> = projects
+        .iter()
+        .map(|p| format!("    - team/projects/{}/coding-agent/skills", p))
+        .collect();
+    let section = format!(
+        "    {}\n{}\n    {}",
+        PROJECT_SKILL_DIRS_START,
+        lines.join("\n"),
+        PROJECT_SKILL_DIRS_END,
+    );
+
+    let new_content = inject_section_with_markers(
+        &content, &section, PROJECT_SKILL_DIRS_START, PROJECT_SKILL_DIRS_END,
+    );
+    fs::write(ralph_yml_path, new_content)
+        .context("Failed to write ralph.yml")?;
+    Ok(())
+}
+
+/// Injects project-aware sections into the context file (CLAUDE.md).
+///
+/// Handles all project-related markers in a single pass:
+/// - `BM:WORKSPACE_LAYOUT` — ASCII tree with actual project dirs
+/// - `BM:PROJECT_CONTEXT` — assigned projects table
+/// - `BM:PROJECT_KNOWLEDGE` — knowledge resolution rows
+/// - `BM:PROJECT_INVARIANTS` — invariant compliance rows
+pub fn inject_project_sections(
+    context_path: &Path,
+    member_dir_name: &str,
+    projects: &[&str],
+) -> Result<()> {
+    if !context_path.exists() {
+        return Ok(());
+    }
+    let mut content = fs::read_to_string(context_path)
+        .context("Failed to read context file")?;
+
+    // Workspace layout
+    if content.contains(WORKSPACE_LAYOUT_START) {
+        let section = render_workspace_layout(member_dir_name, projects);
+        content = inject_section_with_markers(
+            &content, &section, WORKSPACE_LAYOUT_START, WORKSPACE_LAYOUT_END,
+        );
+    }
+
+    // Project context table
+    if content.contains(PROJECT_CONTEXT_START) {
+        let section = render_project_context(projects);
+        content = inject_section_with_markers(
+            &content, &section, PROJECT_CONTEXT_START, PROJECT_CONTEXT_END,
+        );
+    }
+
+    // Knowledge resolution rows
+    if content.contains(PROJECT_KNOWLEDGE_START) {
+        let section = render_project_knowledge(projects, member_dir_name);
+        content = inject_section_with_markers(
+            &content, &section, PROJECT_KNOWLEDGE_START, PROJECT_KNOWLEDGE_END,
+        );
+    }
+
+    // Invariant compliance rows
+    if content.contains(PROJECT_INVARIANTS_START) {
+        let section = render_project_invariants(projects);
+        content = inject_section_with_markers(
+            &content, &section, PROJECT_INVARIANTS_START, PROJECT_INVARIANTS_END,
+        );
+    }
+
+    fs::write(context_path, content)
+        .context("Failed to write context file")?;
+    Ok(())
+}
+
+fn render_workspace_layout(member_dir_name: &str, projects: &[&str]) -> String {
+    let mut tree = String::new();
+    tree.push_str(&format!("{WORKSPACE_LAYOUT_START}\n"));
+    tree.push_str("```\n");
+    tree.push_str(&format!("{}/               # Workspace (CWD)\n", member_dir_name));
+    tree.push_str("  team/                           # Team repo (submodule)\n");
+    tree.push_str("    knowledge/, invariants/        # Team-level\n");
+    tree.push_str(&format!("    members/{}/           # Member config\n", member_dir_name));
+    if !projects.is_empty() {
+        tree.push_str("  projects/\n");
+        for p in projects {
+            tree.push_str(&format!("    {}/                   # Project (submodule)\n", p));
+        }
+    }
+    tree.push_str("  PROMPT.md\n");
+    tree.push_str("  CLAUDE.md\n");
+    tree.push_str("  ralph.yml\n");
+    tree.push_str("  poll-log.txt                    # Board scan audit log\n");
+    tree.push_str("```\n");
+    tree.push_str(WORKSPACE_LAYOUT_END);
+    tree
+}
+
+fn render_project_context(projects: &[&str]) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("{PROJECT_CONTEXT_START}\n"));
+    if projects.is_empty() {
+        s.push_str("No projects assigned yet.\n");
+    } else {
+        s.push_str("| Project | Path |\n");
+        s.push_str("|---------|------|\n");
+        for p in projects {
+            s.push_str(&format!("| {} | `projects/{}/` |\n", p, p));
+        }
+    }
+    s.push_str(PROJECT_CONTEXT_END);
+    s
+}
+
+fn render_project_knowledge(projects: &[&str], member_dir_name: &str) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("{PROJECT_KNOWLEDGE_START}\n"));
+    for p in projects {
+        s.push_str(&format!("| Project knowledge ({}) | `team/projects/{}/knowledge/` |\n", p, p));
+    }
+    for p in projects {
+        s.push_str(&format!(
+            "| Member+project ({}) | `team/members/{}/projects/{}/knowledge/` |\n",
+            p, member_dir_name, p,
+        ));
+    }
+    s.push_str(PROJECT_KNOWLEDGE_END);
+    s
+}
+
+fn render_project_invariants(projects: &[&str]) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("{PROJECT_INVARIANTS_START}\n"));
+    for p in projects {
+        s.push_str(&format!("| Project invariants ({}) | `team/projects/{}/invariants/` |\n", p, p));
+    }
+    s.push_str(PROJECT_INVARIANTS_END);
+    s
 }
 
 #[cfg(test)]

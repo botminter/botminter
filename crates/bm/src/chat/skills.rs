@@ -23,11 +23,6 @@ pub fn scan_skills(ws_path: &Path, dirs: &[String]) -> Vec<SkillInfo> {
     let mut seen_names: HashSet<String> = HashSet::new();
 
     for dir in dirs {
-        // Skip template paths with <project> placeholder
-        if dir.contains("<project>") {
-            continue;
-        }
-
         let skill_dir = ws_path.join(dir);
         let entries = match fs::read_dir(&skill_dir) {
             Ok(entries) => entries,
@@ -159,16 +154,6 @@ mod tests {
             "team/coding-agent/skills/gh/SKILL.md"
         );
         assert_eq!(result[1].name, "status-workflow");
-    }
-
-    #[test]
-    fn scan_skills_skips_project_placeholder() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dirs = vec![
-            "team/projects/<project>/coding-agent/skills".to_string(),
-        ];
-        let result = scan_skills(tmp.path(), &dirs);
-        assert!(result.is_empty(), "Should skip dirs with <project> placeholder");
     }
 
     #[test]

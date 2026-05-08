@@ -199,6 +199,17 @@ pub fn sync_workspace(
         &project_name_refs,
     )?;
 
+    // Inject project-aware sections into ralph.yml and context file
+    super::context::inject_project_skill_dirs(
+        &ws_root.join("ralph.yml"),
+        &project_name_refs,
+    )?;
+    super::context::inject_project_sections(
+        &ws_root.join(&coding_agent.context_file),
+        member_dir_name,
+        &project_name_refs,
+    )?;
+
     // Re-assemble agent dir from team/ submodule paths (idempotent)
     assemble_agent_dir_submodule(ws_root, member_dir_name, &project_name_refs, coding_agent)?;
     if verbose {
@@ -244,16 +255,28 @@ fn checkout_member_branch(sub_dir: &Path, member_dir_name: &str, verbose: bool, 
         return Ok(());
     }
 
-    // Try checkout existing, fall back to creating
+    // Try checkout existing branch first
     if git_cmd(sub_dir, &["checkout", member_dir_name]).is_ok() {
         if verbose {
             result.events.push(SyncEvent::BranchCheckedOut(member_dir_name.to_string()));
         }
-    } else {
-        git_cmd(sub_dir, &["checkout", "-b", member_dir_name])?;
-        if verbose {
-            result.events.push(SyncEvent::BranchCreated(member_dir_name.to_string()));
-        }
+        return Ok(());
+    }
+
+    // Checkout failed — only create if the branch doesn't exist yet.
+    // If it exists, the failure was due to dirty working tree.
+    let branch_exists = git_cmd(sub_dir, &["rev-parse", "--verify", member_dir_name]).is_ok();
+    if branch_exists {
+        anyhow::bail!(
+            "Cannot switch to branch '{}': working tree has uncommitted changes. \
+             Commit or stash changes in the submodule first.",
+            member_dir_name
+        );
+    }
+
+    git_cmd(sub_dir, &["checkout", "-b", member_dir_name])?;
+    if verbose {
+        result.events.push(SyncEvent::BranchCreated(member_dir_name.to_string()));
     }
     Ok(())
 }
