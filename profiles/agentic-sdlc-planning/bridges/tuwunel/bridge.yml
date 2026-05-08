@@ -1,0 +1,27 @@
+apiVersion: botminter.dev/v1alpha1
+kind: Bridge
+metadata:
+  name: tuwunel
+  displayName: "Matrix (Tuwunel)"
+  description: "Matrix bridge via Tuwunel homeserver (local Podman container)"
+
+spec:
+  type: local
+  configSchema: schema.json
+
+  lifecycle:
+    start: start
+    stop: stop
+    health: health
+
+  identity:
+    onboard: onboard
+    rotate-credentials: rotate
+    remove: remove
+    verify: verify
+
+  room:
+    create: room-create
+    list: room-list
+
+  configDir: "$BRIDGE_CONFIG_DIR"

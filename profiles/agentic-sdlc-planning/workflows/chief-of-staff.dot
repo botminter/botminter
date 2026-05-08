@@ -1,0 +1,22 @@
+// Chief of Staff workflow state machine
+// Statuses: cos:exec:todo, cos:exec:in-progress, cos:exec:done
+
+digraph manager {
+    rankdir=LR;
+    graph [fontname="Helvetica", bgcolor="transparent"];
+    node [fontname="Helvetica", style="filled", fontsize=11];
+    edge [fontname="Helvetica", fontsize=9];
+
+    // Chief of Staff (teal)
+    node [fillcolor="#5EEAD4", color="#115E59", shape=box];
+    "cos:exec:todo";
+    "cos:exec:in-progress";
+
+    // Terminal (cos:exec:done)
+    node [fillcolor="#5EEAD4", color="#115E59", shape=doublecircle];
+    "cos:exec:done";
+
+    // --- Transitions ---
+    "cos:exec:todo" -> "cos:exec:in-progress" [label="start"];
+    "cos:exec:in-progress" -> "cos:exec:done" [label="complete"];
+}

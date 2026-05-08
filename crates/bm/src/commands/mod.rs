@@ -9,6 +9,7 @@ pub mod completions;
 pub mod disable;
 pub mod enable;
 pub mod env;
+pub mod meeting;
 pub mod daemon;
 pub mod fire;
 pub mod hire;

@@ -1,0 +1,17 @@
+apiVersion: botminter.dev/v1alpha1
+kind: Bridge
+metadata:
+  name: telegram
+  displayName: "Telegram"
+  description: "Telegram Bot API bridge for team communication"
+
+spec:
+  type: external
+  configSchema: schema.json
+
+  identity:
+    onboard: onboard
+    rotate-credentials: rotate
+    remove: remove
+
+  configDir: "$BRIDGE_CONFIG_DIR"

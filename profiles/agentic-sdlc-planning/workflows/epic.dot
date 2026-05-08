@@ -1,0 +1,41 @@
+// Epic workflow state machine (8 statuses)
+// Statuses: human:po:triage, human:po:backlog, eng:lead:plan,
+//           human:po:plan-review, eng:lead:breakdown, eng:lead:monitor,
+//           human:po:accept, done
+
+digraph epic {
+    rankdir=LR;
+    graph [fontname="Helvetica", bgcolor="transparent"];
+    node [fontname="Helvetica", style="filled", fontsize=11];
+    edge [fontname="Helvetica", fontsize=9];
+
+    // Human gates (amber, octagon = human decision)
+    node [fillcolor="#FCD34D", color="#B45309", shape=octagon];
+    "human:po:triage" [label="human:po:triage\n(GATE)"];
+    "human:po:backlog" [label="human:po:backlog\n(GATE)"];
+    "human:po:plan-review" [label="human:po:plan-review\n(GATE)"];
+    "human:po:accept" [label="human:po:accept\n(GATE)"];
+
+    // Engineer Lead hat (purple)
+    node [fillcolor="#C4B5FD", color="#6D28D9", shape=box];
+    "eng:lead:plan";
+    "eng:lead:breakdown";
+    "eng:lead:monitor";
+
+    // Terminal (done)
+    node [fillcolor="#D1D5DB", color="#374151", shape=doublecircle];
+    "done";
+
+    // --- Happy path transitions ---
+    "human:po:triage" -> "human:po:backlog" [label="accept"];
+    "human:po:backlog" -> "eng:lead:plan" [label="activate"];
+    "eng:lead:plan" -> "human:po:plan-review" [label="plan ready"];
+    "human:po:plan-review" -> "eng:lead:breakdown" [label="approved"];
+    "eng:lead:breakdown" -> "eng:lead:monitor" [label="stories created"];
+    "eng:lead:monitor" -> "human:po:accept" [label="all stories done"];
+    "human:po:accept" -> "done" [label="approved"];
+
+    // --- Rejection loops (dashed red) ---
+    "human:po:plan-review" -> "eng:lead:plan" [label="rejected", style=dashed, color="#DC2626", fontcolor="#DC2626"];
+    "human:po:accept" -> "eng:lead:monitor" [label="rejected", style=dashed, color="#DC2626", fontcolor="#DC2626"];
+}

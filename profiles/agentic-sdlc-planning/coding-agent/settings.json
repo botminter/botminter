@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bm-agent claude hook post-tool-use"
+          }
+        ]
+      }
+    ]
+  },
+  "denied_tools": []
+}

@@ -1,0 +1,473 @@
+# Rocket.Chat bridge -- lifecycle, identity, and room recipes
+# Local bridge: Podman Pod with RC 8.2.0 + MongoDB 7.0
+
+set positional-arguments
+
+POD_NAME := "bm-rc-" + env("BM_TEAM_NAME", "default")
+RC_PORT := env("RC_PORT", "3000")
+RC_URL := "http://127.0.0.1:" + RC_PORT
+MONGO_IMAGE := "docker.io/mongo:7.0"
+RC_IMAGE := "registry.rocket.chat/rocketchat/rocket.chat:latest"
+ADMIN_USER := env("RC_ADMIN_USER", "rcadmin")
+ADMIN_PASS := env("RC_ADMIN_PASS", "rcadmin123")
+ADMIN_EMAIL := env("RC_ADMIN_EMAIL", "admin@botminter.local")
+CREATE_TOKEN_SECRET := env("RC_CREATE_TOKEN_SECRET", "bm-rc-secret-default")
+
+# Boot Rocket.Chat + MongoDB Podman Pod, wait for health, save admin credentials.
+start:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    POD_NAME="{{POD_NAME}}"
+    RC_PORT="{{RC_PORT}}"
+    RC_URL="{{RC_URL}}"
+    ADMIN_USER="{{ADMIN_USER}}"
+    ADMIN_PASS="{{ADMIN_PASS}}"
+    ADMIN_EMAIL="{{ADMIN_EMAIL}}"
+    CREATE_TOKEN_SECRET="{{CREATE_TOKEN_SECRET}}"
+
+    # Idempotency: if pod exists and is running, just save state and exit
+    if podman pod exists "${POD_NAME}" 2>/dev/null; then
+        POD_STATUS=$(podman pod inspect "${POD_NAME}" --format '{{{{.State}}' 2>/dev/null || echo "unknown")
+        if [ "$POD_STATUS" = "Running" ]; then
+            echo >&2 "[rc-bridge] Pod ${POD_NAME} already running on port ${RC_PORT}"
+            # Re-login to get admin token for state file
+            LOGIN_RESP=$(curl -sf -X POST \
+                -H "Content-Type: application/json" \
+                -d "{\"user\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}" \
+                "${RC_URL}/api/v1/login" || echo '{}')
+            ADMIN_TOKEN=$(echo "$LOGIN_RESP" | jq -r '.data.authToken // empty')
+            ADMIN_USER_ID=$(echo "$LOGIN_RESP" | jq -r '.data.userId // empty')
+            mkdir -p "$BRIDGE_CONFIG_DIR"
+            cat > "$BRIDGE_CONFIG_DIR/config.json" <<ENDJSON
+    {"service_url": "${RC_URL}", "admin_user_id": "${ADMIN_USER_ID}", "admin_auth_token": "${ADMIN_TOKEN}", "container_id": "${POD_NAME}", "status": "running"}
+    ENDJSON
+            exit 0
+        fi
+        # Pod exists but stopped -- restart it to preserve data
+        echo >&2 "[rc-bridge] Pod ${POD_NAME} exists but is ${POD_STATUS}. Restarting..."
+        podman pod start "${POD_NAME}"
+
+        # Wait for Rocket.Chat to become healthy after restart
+        echo >&2 "[rc-bridge] Waiting for Rocket.Chat to become healthy after restart..."
+        for i in $(seq 1 60); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${RC_URL}/api/info" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+                echo >&2 "[rc-bridge] Rocket.Chat is healthy."
+                break
+            fi
+            if [ "$i" -eq 60 ]; then
+                echo >&2 "[rc-bridge] FATAL: Rocket.Chat did not become healthy within 180s after restart."
+                exit 1
+            fi
+            sleep 3
+        done
+
+        # Re-login to get admin token for state file
+        LOGIN_RESP=$(curl -sf -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"user\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}" \
+            "${RC_URL}/api/v1/login" || echo '{}')
+        ADMIN_TOKEN=$(echo "$LOGIN_RESP" | jq -r '.data.authToken // empty')
+        ADMIN_USER_ID=$(echo "$LOGIN_RESP" | jq -r '.data.userId // empty')
+        mkdir -p "$BRIDGE_CONFIG_DIR"
+        cat > "$BRIDGE_CONFIG_DIR/config.json" <<ENDJSON
+    {"service_url": "${RC_URL}", "admin_user_id": "${ADMIN_USER_ID}", "admin_auth_token": "${ADMIN_TOKEN}", "container_id": "${POD_NAME}", "status": "running"}
+    ENDJSON
+        exit 0
+    fi
+
+    echo >&2 "[rc-bridge] Creating Podman Pod: ${POD_NAME} (port ${RC_PORT}:3000)..."
+    podman pod create --name "${POD_NAME}" -p "${RC_PORT}:3000"
+
+    # Start MongoDB
+    echo >&2 "[rc-bridge] Starting MongoDB 7.0 with replica set..."
+    podman run -d --pod "${POD_NAME}" --name "${POD_NAME}-mongo" \
+        "{{MONGO_IMAGE}}" mongod --replSet rs0 --oplogSize 128
+
+    echo >&2 "[rc-bridge] Waiting for MongoDB..."
+    for i in $(seq 1 30); do
+        if podman exec "${POD_NAME}-mongo" mongosh --quiet --eval "db.runCommand({ping:1})" 2>/dev/null | grep -q 'ok.*1'; then
+            echo >&2 "[rc-bridge] MongoDB is up (attempt ${i})."
+            break
+        fi
+        if [ "$i" -eq 30 ]; then
+            echo >&2 "[rc-bridge] FATAL: MongoDB did not start."
+            exit 1
+        fi
+        sleep 2
+    done
+
+    echo >&2 "[rc-bridge] Initializing replica set..."
+    podman exec "${POD_NAME}-mongo" mongosh --quiet --eval \
+        'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+    sleep 2
+
+    # Start Rocket.Chat
+    echo >&2 "[rc-bridge] Starting Rocket.Chat 8.2.0..."
+    podman run -d --pod "${POD_NAME}" --name "${POD_NAME}-rocketchat" \
+        -e ROOT_URL="${RC_URL}" \
+        -e MONGO_URL="mongodb://localhost:27017/rocketchat?replicaSet=rs0" \
+        -e MONGO_OPLOG_URL="mongodb://localhost:27017/local?replicaSet=rs0" \
+        -e OVERWRITE_SETTING_Show_Setup_Wizard="completed" \
+        -e ADMIN_USERNAME="${ADMIN_USER}" \
+        -e ADMIN_PASS="${ADMIN_PASS}" \
+        -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
+        -e CREATE_TOKENS_FOR_USERS_SECRET="${CREATE_TOKEN_SECRET}" \
+        -e OVERWRITE_SETTING_Accounts_TwoFactorAuthentication_Enabled=false \
+        -e OVERWRITE_SETTING_Accounts_TwoFactorAuthentication_By_Email_Enabled=false \
+        "{{RC_IMAGE}}"
+
+    # Health check loop
+    echo >&2 "[rc-bridge] Waiting for Rocket.Chat to become healthy (up to 180s)..."
+    for i in $(seq 1 60); do
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${RC_URL}/api/info" 2>/dev/null || echo "000")
+        if [ "$HTTP_CODE" = "200" ]; then
+            echo >&2 "[rc-bridge] Rocket.Chat is healthy."
+            break
+        fi
+        if [ "$i" -eq 60 ]; then
+            echo >&2 "[rc-bridge] FATAL: Rocket.Chat did not become healthy within 180s."
+            podman logs "${POD_NAME}-rocketchat" 2>&1 | tail -20 >&2
+            exit 1
+        fi
+        sleep 3
+    done
+
+    # Admin login
+    echo >&2 "[rc-bridge] Logging in as admin..."
+    LOGIN_RESP=$(curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"user\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}" \
+        "${RC_URL}/api/v1/login")
+
+    ADMIN_TOKEN=$(echo "$LOGIN_RESP" | jq -r '.data.authToken')
+    ADMIN_USER_ID=$(echo "$LOGIN_RESP" | jq -r '.data.userId')
+
+    if [ "$ADMIN_TOKEN" = "null" ] || [ -z "$ADMIN_TOKEN" ]; then
+        echo >&2 "[rc-bridge] FATAL: Admin login failed."
+        echo >&2 "$LOGIN_RESP"
+        exit 1
+    fi
+    echo >&2 "[rc-bridge] Admin login successful. userId=${ADMIN_USER_ID}"
+
+    # Write config exchange output
+    mkdir -p "$BRIDGE_CONFIG_DIR"
+    cat > "$BRIDGE_CONFIG_DIR/config.json" <<ENDJSON
+    {"service_url": "${RC_URL}", "admin_user_id": "${ADMIN_USER_ID}", "admin_auth_token": "${ADMIN_TOKEN}", "container_id": "${POD_NAME}", "status": "running"}
+    ENDJSON
+
+    echo >&2 "[rc-bridge] Bridge started."
+
+# Stop the Podman Pod (preserves data for restart).
+stop:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    POD_NAME="{{POD_NAME}}"
+
+    echo >&2 "[rc-bridge] Stopping pod ${POD_NAME}..."
+    podman pod stop "${POD_NAME}" 2>/dev/null || true
+
+    mkdir -p "$BRIDGE_CONFIG_DIR"
+    cat > "$BRIDGE_CONFIG_DIR/config.json" <<ENDJSON
+    {"status": "stopped"}
+    ENDJSON
+
+    echo >&2 "[rc-bridge] Bridge stopped."
+
+# Health check -- exit 0 if healthy, exit 1 if not.
+health:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    RC_URL="{{RC_URL}}"
+    HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "${RC_URL}/api/info" 2>/dev/null || echo "000")
+    if [ "$HTTP_CODE" = "200" ]; then
+        echo >&2 "[rc-bridge] Health check: OK"
+        exit 0
+    else
+        echo >&2 "[rc-bridge] Health check: FAILED (HTTP ${HTTP_CODE})"
+        exit 1
+    fi
+
+# Create a bot user on the Rocket.Chat server and generate an auth token.
+onboard username:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    RC_URL="{{RC_URL}}"
+    ADMIN_USER="{{ADMIN_USER}}"
+    ADMIN_PASS="{{ADMIN_PASS}}"
+    CREATE_TOKEN_SECRET="{{CREATE_TOKEN_SECRET}}"
+    USERNAME="{{username}}"
+
+    # Login as admin
+    LOGIN_RESP=$(curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"user\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}" \
+        "${RC_URL}/api/v1/login")
+
+    ADMIN_TOKEN=$(echo "$LOGIN_RESP" | jq -r '.data.authToken')
+    ADMIN_USER_ID=$(echo "$LOGIN_RESP" | jq -r '.data.userId')
+
+    if [ "$ADMIN_TOKEN" = "null" ] || [ -z "$ADMIN_TOKEN" ]; then
+        echo >&2 "[rc-bridge] FATAL: Admin login failed."
+        exit 1
+    fi
+
+    # Check if user already exists
+    EXISTING=$(curl -sf \
+        -H "X-Auth-Token: ${ADMIN_TOKEN}" \
+        -H "X-User-Id: ${ADMIN_USER_ID}" \
+        "${RC_URL}/api/v1/users.info?username=${USERNAME}" 2>/dev/null || echo '{}')
+
+    EXISTING_ID=$(echo "$EXISTING" | jq -r '.user._id // empty')
+    if [ -n "$EXISTING_ID" ]; then
+        echo >&2 "[rc-bridge] User ${USERNAME} already exists (${EXISTING_ID}), generating new token..."
+        BOT_USER_ID="$EXISTING_ID"
+    else
+        # Create user
+        BOT_PASS=$(openssl rand -hex 16)
+        CREATE_RESP=$(curl -sf -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Auth-Token: ${ADMIN_TOKEN}" \
+            -H "X-User-Id: ${ADMIN_USER_ID}" \
+            -d "{\"email\":\"${USERNAME}@botminter.local\",\"name\":\"${USERNAME}\",\"password\":\"${BOT_PASS}\",\"username\":\"${USERNAME}\",\"roles\":[\"bot\"],\"verified\":true}" \
+            "${RC_URL}/api/v1/users.create")
+
+        BOT_USER_ID=$(echo "$CREATE_RESP" | jq -r '.user._id')
+        if [ "$BOT_USER_ID" = "null" ] || [ -z "$BOT_USER_ID" ]; then
+            echo >&2 "[rc-bridge] FATAL: User creation failed."
+            echo >&2 "$CREATE_RESP"
+            exit 1
+        fi
+        echo >&2 "[rc-bridge] User ${USERNAME} created. userId=${BOT_USER_ID}"
+    fi
+
+    # Generate auth token
+    TOKEN_RESP=$(curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-Auth-Token: ${ADMIN_TOKEN}" \
+        -H "X-User-Id: ${ADMIN_USER_ID}" \
+        -d "{\"userId\":\"${BOT_USER_ID}\",\"secret\":\"${CREATE_TOKEN_SECRET}\"}" \
+        "${RC_URL}/api/v1/users.createToken")
+
+    BOT_AUTH_TOKEN=$(echo "$TOKEN_RESP" | jq -r '.data.authToken')
+    if [ "$BOT_AUTH_TOKEN" = "null" ] || [ -z "$BOT_AUTH_TOKEN" ]; then
+        echo >&2 "[rc-bridge] FATAL: Token generation failed."
+        echo >&2 "$TOKEN_RESP"
+        exit 1
+    fi
+    echo >&2 "[rc-bridge] Auth token generated for ${USERNAME}."
+
+    mkdir -p "$BRIDGE_CONFIG_DIR"
+    cat > "$BRIDGE_CONFIG_DIR/config.json" <<ENDJSON
+    {"username": "${USERNAME}", "user_id": "${BOT_USER_ID}", "token": "${BOT_AUTH_TOKEN}"}
+    ENDJSON
+
+# Rotate credentials -- generate a new auth token for an existing user.
+rotate username:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    RC_URL="{{RC_URL}}"
+    ADMIN_USER="{{ADMIN_USER}}"
+    ADMIN_PASS="{{ADMIN_PASS}}"
+    CREATE_TOKEN_SECRET="{{CREATE_TOKEN_SECRET}}"
+    USERNAME="{{username}}"
+
+    # Login as admin
+    LOGIN_RESP=$(curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"user\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}" \
+        "${RC_URL}/api/v1/login")
+
+    ADMIN_TOKEN=$(echo "$LOGIN_RESP" | jq -r '.data.authToken')
+    ADMIN_USER_ID=$(echo "$LOGIN_RESP" | jq -r '.data.userId')
+
+    if [ "$ADMIN_TOKEN" = "null" ] || [ -z "$ADMIN_TOKEN" ]; then
+        echo >&2 "[rc-bridge] FATAL: Admin login failed."
+        exit 1
+    fi
+
+    # Get user ID
+    USER_RESP=$(curl -sf \
+        -H "X-Auth-Token: ${ADMIN_TOKEN}" \
+        -H "X-User-Id: ${ADMIN_USER_ID}" \
+        "${RC_URL}/api/v1/users.info?username=${USERNAME}")
+
+    BOT_USER_ID=$(echo "$USER_RESP" | jq -r '.user._id')
+    if [ "$BOT_USER_ID" = "null" ] || [ -z "$BOT_USER_ID" ]; then
+        echo >&2 "[rc-bridge] FATAL: User ${USERNAME} not found."
+        exit 1
+    fi
+
+    # Generate new token
+    TOKEN_RESP=$(curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-Auth-Token: ${ADMIN_TOKEN}" \
+        -H "X-User-Id: ${ADMIN_USER_ID}" \
+        -d "{\"userId\":\"${BOT_USER_ID}\",\"secret\":\"${CREATE_TOKEN_SECRET}\"}" \
+        "${RC_URL}/api/v1/users.createToken")
+
+    BOT_AUTH_TOKEN=$(echo "$TOKEN_RESP" | jq -r '.data.authToken')
+    if [ "$BOT_AUTH_TOKEN" = "null" ] || [ -z "$BOT_AUTH_TOKEN" ]; then
+        echo >&2 "[rc-bridge] FATAL: Token rotation failed."
+        echo >&2 "$TOKEN_RESP"
+        exit 1
+    fi
+    echo >&2 "[rc-bridge] Token rotated for ${USERNAME}."
+
+    mkdir -p "$BRIDGE_CONFIG_DIR"
+    cat > "$BRIDGE_CONFIG_DIR/config.json" <<ENDJSON
+    {"username": "${USERNAME}", "user_id": "${BOT_USER_ID}", "token": "${BOT_AUTH_TOKEN}"}
+    ENDJSON
+
+# Remove a bot user from the Rocket.Chat server.
+remove username:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    RC_URL="{{RC_URL}}"
+    ADMIN_USER="{{ADMIN_USER}}"
+    ADMIN_PASS="{{ADMIN_PASS}}"
+    USERNAME="{{username}}"
+
+    # Login as admin
+    LOGIN_RESP=$(curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"user\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}" \
+        "${RC_URL}/api/v1/login")
+
+    ADMIN_TOKEN=$(echo "$LOGIN_RESP" | jq -r '.data.authToken')
+    ADMIN_USER_ID=$(echo "$LOGIN_RESP" | jq -r '.data.userId')
+
+    if [ "$ADMIN_TOKEN" = "null" ] || [ -z "$ADMIN_TOKEN" ]; then
+        echo >&2 "[rc-bridge] FATAL: Admin login failed."
+        exit 1
+    fi
+
+    # Get user ID
+    USER_RESP=$(curl -sf \
+        -H "X-Auth-Token: ${ADMIN_TOKEN}" \
+        -H "X-User-Id: ${ADMIN_USER_ID}" \
+        "${RC_URL}/api/v1/users.info?username=${USERNAME}" 2>/dev/null || echo '{}')
+
+    BOT_USER_ID=$(echo "$USER_RESP" | jq -r '.user._id // empty')
+    if [ -z "$BOT_USER_ID" ]; then
+        echo >&2 "[rc-bridge] User ${USERNAME} not found, nothing to remove."
+        exit 0
+    fi
+
+    # Delete user
+    curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-Auth-Token: ${ADMIN_TOKEN}" \
+        -H "X-User-Id: ${ADMIN_USER_ID}" \
+        -d "{\"userId\":\"${BOT_USER_ID}\"}" \
+        "${RC_URL}/api/v1/users.delete" > /dev/null
+
+    echo >&2 "[rc-bridge] User ${USERNAME} removed."
+
+# Create a channel on the Rocket.Chat server.
+room-create name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    RC_URL="{{RC_URL}}"
+    ADMIN_USER="{{ADMIN_USER}}"
+    ADMIN_PASS="{{ADMIN_PASS}}"
+    ROOM_NAME="{{name}}"
+
+    # Login as admin
+    LOGIN_RESP=$(curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"user\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}" \
+        "${RC_URL}/api/v1/login")
+
+    ADMIN_TOKEN=$(echo "$LOGIN_RESP" | jq -r '.data.authToken')
+    ADMIN_USER_ID=$(echo "$LOGIN_RESP" | jq -r '.data.userId')
+
+    if [ "$ADMIN_TOKEN" = "null" ] || [ -z "$ADMIN_TOKEN" ]; then
+        echo >&2 "[rc-bridge] FATAL: Admin login failed."
+        exit 1
+    fi
+
+    # Check if channel already exists
+    EXISTING=$(curl -sf \
+        -H "X-Auth-Token: ${ADMIN_TOKEN}" \
+        -H "X-User-Id: ${ADMIN_USER_ID}" \
+        "${RC_URL}/api/v1/channels.info?roomName=${ROOM_NAME}" 2>/dev/null || echo '{}')
+
+    EXISTING_ID=$(echo "$EXISTING" | jq -r '.channel._id // empty')
+    if [ -n "$EXISTING_ID" ]; then
+        echo >&2 "[rc-bridge] Channel ${ROOM_NAME} already exists (${EXISTING_ID})."
+        mkdir -p "$BRIDGE_CONFIG_DIR"
+        cat > "$BRIDGE_CONFIG_DIR/config.json" <<ENDJSON
+    {"name": "${ROOM_NAME}", "room_id": "${EXISTING_ID}"}
+    ENDJSON
+        exit 0
+    fi
+
+    # Collect bot usernames from bridge state identities for channel membership
+    MEMBERS_JSON="[]"
+    BRIDGE_STATE_PATH="${BRIDGE_CONFIG_DIR}/../../bridge-state.json"
+    if [ -f "$BRIDGE_STATE_PATH" ]; then
+        MEMBERS_JSON=$(jq -r '[.identities | to_entries[].value.username]' "$BRIDGE_STATE_PATH" 2>/dev/null || echo "[]")
+    fi
+
+    # Create channel with bot members
+    CHANNEL_RESP=$(curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-Auth-Token: ${ADMIN_TOKEN}" \
+        -H "X-User-Id: ${ADMIN_USER_ID}" \
+        -d "{\"name\":\"${ROOM_NAME}\",\"members\":${MEMBERS_JSON}}" \
+        "${RC_URL}/api/v1/channels.create")
+
+    CHANNEL_ID=$(echo "$CHANNEL_RESP" | jq -r '.channel._id')
+    if [ "$CHANNEL_ID" = "null" ] || [ -z "$CHANNEL_ID" ]; then
+        echo >&2 "[rc-bridge] FATAL: Channel creation failed."
+        echo >&2 "$CHANNEL_RESP"
+        exit 1
+    fi
+    echo >&2 "[rc-bridge] Channel ${ROOM_NAME} created. channelId=${CHANNEL_ID}"
+
+    mkdir -p "$BRIDGE_CONFIG_DIR"
+    cat > "$BRIDGE_CONFIG_DIR/config.json" <<ENDJSON
+    {"name": "${ROOM_NAME}", "room_id": "${CHANNEL_ID}"}
+    ENDJSON
+
+# List channels on the Rocket.Chat server.
+room-list:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    RC_URL="{{RC_URL}}"
+    ADMIN_USER="{{ADMIN_USER}}"
+    ADMIN_PASS="{{ADMIN_PASS}}"
+
+    # Login as admin
+    LOGIN_RESP=$(curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"user\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}" \
+        "${RC_URL}/api/v1/login")
+
+    ADMIN_TOKEN=$(echo "$LOGIN_RESP" | jq -r '.data.authToken')
+    ADMIN_USER_ID=$(echo "$LOGIN_RESP" | jq -r '.data.userId')
+
+    if [ "$ADMIN_TOKEN" = "null" ] || [ -z "$ADMIN_TOKEN" ]; then
+        echo >&2 "[rc-bridge] FATAL: Admin login failed."
+        exit 1
+    fi
+
+    LIST_RESP=$(curl -sf \
+        -H "X-Auth-Token: ${ADMIN_TOKEN}" \
+        -H "X-User-Id: ${ADMIN_USER_ID}" \
+        "${RC_URL}/api/v1/channels.list")
+
+    ROOMS=$(echo "$LIST_RESP" | jq '[.channels[] | {name: .name, room_id: ._id}]')
+
+    mkdir -p "$BRIDGE_CONFIG_DIR"
+    echo "$ROOMS" > "$BRIDGE_CONFIG_DIR/config.json"
+
+    echo >&2 "[rc-bridge] Listed $(echo "$ROOMS" | jq length) channel(s)."

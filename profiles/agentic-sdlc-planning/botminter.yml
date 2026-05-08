@@ -1,0 +1,169 @@
+name: agentic-sdlc-planning
+display_name: "Agentic SDLC Planning"
+description: "Agentic software lifecycle with PDD planning pipeline, adversarial review, verification, and a multi-gate status graph. Three roles: engineer (full SDLC), sentinel (merge gatekeeper), and chief-of-staff (operator's AI assistant)."
+version: "1.0.0"
+schema_version: '1.0'
+
+coding_agents:
+  claude-code:
+    name: claude-code
+    display_name: "Claude Code"
+    context_file: "CLAUDE.md"
+    agent_dir: ".claude"
+    binary: "claude"
+    system_prompt_flag: "--append-system-prompt-file"
+    skip_permissions_flag: "--dangerously-skip-permissions"
+
+default_coding_agent: claude-code
+
+bridges:
+  - name: tuwunel
+    display_name: "Matrix (Tuwunel)"
+    description: "Matrix bridge via Tuwunel homeserver (local Podman container)"
+    type: local
+  - name: telegram
+    display_name: "Telegram"
+    description: "Telegram Bot API for team communication"
+    type: external
+  - name: rocketchat
+    display_name: "Rocket.Chat"
+    description: "Rocket.Chat bridge for team communication (local Podman Pod)"
+    type: local
+
+roles:
+  - name: engineer
+    description: "Full SDLC engineer — PO, architect, dev, QE, SRE, and content writer in one member"
+  - name: chief-of-staff
+    description: "The operator's chief of staff — handles operational tasks, reviews member activity, and drives improvements"
+  - name: sentinel
+    description: "PR merge gatekeeper and orphaned PR triage"
+
+labels:
+  # Issue classification uses GitHub native issue types (Epic, Task, Bug).
+  # Stories and subtasks are linked via native sub-issues.
+  - name: "kind/docs"
+    color: "0075CA"
+    description: "Label modifier — routes any issue type to content writer hats"
+  # Role labels
+  - name: "role/chief-of-staff"
+    color: "5319E7"
+    description: "Assigned to chief of staff"
+  - name: "role/sentinel"
+    color: "B60205"
+    description: "Assigned to sentinel"
+  # Project labels
+  - name: "project/<project>"
+    color: "0E8A16"
+    description: "Associates issue with a project (template — actual label uses project name)"
+  # Planning automation labels
+  - name: "plan:auto"
+    color: "FBCA04"
+    description: "Auto-advance at human:po:plan-review — skip human approval for planning"
+  - name: "accept:auto"
+    color: "FBCA04"
+    description: "Auto-advance at human:po:accept — skip human acceptance"
+  # Task externalization labels
+  - name: "tasks:inline"
+    color: "D4C5F9"
+    description: "Track tasks as inline sub-issues instead of separate issues"
+  - name: "tasks:off"
+    color: "D4C5F9"
+    description: "Track tasks only as .code-task-NN.md files (no GitHub issues)"
+  # Agent-internal label
+  - name: "agent-internal"
+    color: "EDEDED"
+    description: "Agent-internal task — excluded from default board view"
+  # Bug classification labels
+  - name: "bug:simple"
+    color: "D93F0B"
+    description: "Simple bug — fast path without complexity analysis"
+  - name: "bug:complex"
+    color: "B60205"
+    description: "Complex bug — full planning path with story creation"
+  # Backward generation trigger
+  - name: "planning:backward-generate"
+    color: "0E8A16"
+    description: "Trigger backward artifact generation for the work item"
+
+statuses:
+  # Epic statuses (8-status lifecycle)
+  - name: "human:po:triage"
+    description: "New epic or bug, awaiting human evaluation"
+  - name: "human:po:backlog"
+    description: "Accepted, prioritized, awaiting activation"
+  - name: "eng:lead:plan"
+    description: "Engineer (lead hat) creating planning artifacts"
+  - name: "human:po:plan-review"
+    description: "Planning artifacts awaiting human review"
+  - name: "eng:lead:breakdown"
+    description: "Engineer (lead hat) creating story issues from plan"
+  - name: "eng:lead:monitor"
+    description: "Engineer (lead hat) monitoring story execution"
+  - name: "human:po:accept"
+    description: "Work awaiting human acceptance"
+  - name: "done"
+    description: "Complete"
+
+  # Story statuses (shared: eng:lead:plan, human:po:plan-review, human:po:accept, done)
+  - name: "eng:dev:implement"
+    description: "Engineer (developer hat) implementing"
+  - name: "eng:qe:verify"
+    description: "Engineer (QE hat) verifying implementation"
+  - name: "snt:gate:merge"
+    description: "Sentinel running merge gates on PR"
+
+  # Bug statuses (shared: human:po:triage, done)
+  - name: "eng:qe:investigate"
+    description: "Engineer (QE hat) investigating bug"
+  - name: "eng:qe:monitor"
+    description: "Engineer (QE hat) monitoring linked story"
+
+  # Chief of Staff statuses
+  - name: "cos:exec:todo"
+    description: "Task awaiting chief of staff"
+  - name: "cos:exec:in-progress"
+    description: "Chief of staff working on task"
+  - name: "cos:exec:done"
+    description: "Task completed by chief of staff"
+
+views:
+  - name: "Engineer"
+    prefixes: ["eng"]
+    also_include: ["done"]
+  - name: "Human Gates"
+    prefixes: ["human"]
+    also_include: ["done"]
+  - name: "Sentinel"
+    prefixes: ["snt"]
+    also_include: ["done"]
+  - name: "Chief of Staff"
+    prefixes: ["cos"]
+    also_include: ["done"]
+
+meetings:
+  - name: planning
+    description: "Collaborative planning session"
+    member: engineer
+    instructions: |
+      - You are an engineer on this team.
+      - Right now you are in an interactive planning meeting with the human (PO).
+      - When the user says "start" you must start the planning meeting and welcome the user to the planning meeting.
+      - You MUST start by orienting yourself and understanding if this meeting is about a fresh idea, an existing epic, or an existing issue.
+      - If this is about some unplanned work or work that's not tracked, you MUST ask the user if this is for an epic or a story:
+          - If epic, then you must load the `epic-mgmt` skill and work at epic level
+          - If story, then you must load the `story-mgmt` skill and work at the story level
+      - If this is about some already tracked epic:
+          - You MUST read the epic issue (if one exists) and scan `team/specs/` for existing artifacts BEFORE starting any PDD step
+          - If `plan.md` exists with STORY-NN entries AND story issues exist as sub-issues of the epic, you MUST NOT run the PDD pipeline — epic planning is already complete
+          - If epic planning is complete, you MUST load the `story-mgmt` skill and work at story level
+      - If this is about some already tracked story, you MUST load the `story-mgmt` skill and work at the story level.
+    prompt: start
+  - name: verification
+    description: "Verify acceptance criteria for completed work"
+    member: engineer
+    instructions: |
+      - You are an engineer on this team.
+      - Right now you are in an interactive verification meeting with the human (PO).
+      - You MUST load the `verification` skill to verify acceptance criteria for completed work.
+      - Ask the user for the work item (issue number) to verify.
+    prompt: start

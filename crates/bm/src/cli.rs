@@ -1,8 +1,10 @@
+use std::ffi::OsString;
+
 use clap::{Parser, Subcommand};
 
 /// botminter — lead your own Claude Code agents
 #[derive(Parser)]
-#[command(name = "bm", version, about)]
+#[command(name = "bm", version, about, next_display_order = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -363,6 +365,10 @@ pub enum Command {
         command: DebugCommand,
     },
 
+
+    /// Unknown subcommand (caught when not matching any static or dynamic command)
+    #[command(external_subcommand)]
+    External(Vec<OsString>),
 
     /// Generate dynamic shell completions
     ///

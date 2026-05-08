@@ -98,6 +98,12 @@ This pattern is useful when:
 
 The chief-of-staff role is the first role designed with this pattern in mind, but `bm chat` works with any hired member. See [CLI Reference — `bm chat`](../reference/cli.md#bm-chat) for usage.
 
+### Meetings
+
+While `bm chat` gives the operator a full role-based session, **meetings** provide a lighter-weight alternative: named shortcuts for launching an agent with specific instructions and an initial prompt. Meetings bypass the meta-prompt pipeline entirely — they don't load hats, guardrails, or skills from ralph.yml. Instead, the meeting's `instructions` field is the entire system prompt.
+
+Meetings are defined in the profile's `botminter.yml` and are useful for repeatable, structured interactions — planning sessions, verification checks, retrospectives — where the full member identity isn't needed. See [Meetings](meetings.md) for details.
+
 ## Rejection loops
 
 At review gates, a reviewer can reject work and send it back to the producing role. The rejection mechanism is profile-defined — profiles specify which status transitions represent rejections and where they route back to.
@@ -164,6 +170,7 @@ Members support an operating mode toggle in their `PROMPT.md`. This acts as a co
 
 ## Related topics
 
+- [Meetings](meetings.md) — focused agent sessions as an alternative to full chat
 - [Architecture](architecture.md) — two-layer runtime model
 - [Process Conventions](../reference/process.md) — full scrum label scheme, issue format, comment format
 - [Member Roles](../reference/member-roles.md) — scrum role definitions and hat models

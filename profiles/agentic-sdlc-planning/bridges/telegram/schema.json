@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "bot_token": {
+      "type": "string",
+      "description": "Telegram Bot API token from @BotFather"
+    }
+  },
+  "required": ["bot_token"]
+}

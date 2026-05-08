@@ -1,0 +1,1066 @@
+event_loop:
+  prompt_file: PROMPT.md
+  max_iterations: 10000
+  max_runtime_seconds: 86400
+  persistent: true
+
+cli:
+  backend: claude
+
+core:
+  guardrails:
+    - "Comply with all invariants in team/invariants/, team/projects/<project>/invariants/, and team/members/{{member_dir}}/invariants/"
+
+hats:
+  po_gate:
+    name: PO Gate
+    description: Handles all human:po:* statuses — triage, backlog, plan-review, accept. Per-status branching with auto-advance label support (plan:auto, accept:auto).
+    triggers:
+      - po.gate
+    publishes:
+      - po.gate.failed
+    instructions: |
+      ## PO Gate (GitHub Comment-Based)
+
+      Handle all human decision gates via GitHub issue comments. Determine behavior
+      by checking the issue's current project status.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/po_gate/knowledge/`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Important
+
+      **NEVER use `gh` CLI directly.** All GitHub operations MUST go through the `github-project` skill.
+
+      ### Workflow
+
+      1. Load the `github-project` skill.
+      2. Read the issue using the query-issues operation (`--type single --issue <N>`).
+         The response includes `issueType.name` (Epic, Task, Bug) and labels.
+      3. Determine the issue's current project status.
+      4. Branch to the appropriate handler below.
+
+      ### For `human:po:triage` (Epic, Bug):
+
+      1. **Idempotency check:** Scan comments for an existing triage request comment
+         (a `📝 po` comment containing "New issue in triage"). If present, skip to step 3.
+      2. Add ONE triage request comment using the add-comment operation:
+         ```
+         ### 📝 po — <ISO-timestamp>
+
+         **Triage request**
+
+         New issue in triage:
+         [Title and summary]
+         Recommendation: [your assessment]
+
+         Please respond on this issue:
+         - `Approved` — accept for processing
+         - `Rejected: <reason>` — close this issue
+         ```
+      3. **Check for human response:** Scan for a human comment (NOT authored by the bot)
+         after the triage request.
+         - `Approved` or `LGTM` (case-insensitive) →
+           Epic: set status to `human:po:backlog`.
+           Bug: set status to `eng:qe:investigate`.
+         - `Rejected` (case-insensitive) → close the issue using close-reopen operation.
+         - No response → return control. Issue stays in `human:po:triage`.
+
+      ### For `human:po:backlog` (Epic):
+
+      1. **Idempotency check:** Scan for existing backlog report comment. If present
+         and no new human response, return control.
+      2. Add ONE backlog report comment listing prioritized backlog items.
+      3. **Check for human response:** Scan for a human comment saying "start" or "activate".
+         - If found → set status to `eng:lead:plan`.
+         - Not found → return control. Issue stays in `human:po:backlog`.
+
+      ### For `human:po:plan-review` (Epic, Story):
+
+      1. **Check for `plan:auto` label** on the issue.
+      2. **If `plan:auto` present → auto-advance:**
+         - Query issue type.
+           Epic → set status to `eng:lead:breakdown`.
+           Story (Task) → set status to `eng:dev:implement`.
+         - Add auto-approval comment:
+           ```
+           ### 📝 po — <ISO-timestamp>
+
+           **Plan auto-approved** (label: `plan:auto`)
+
+           Planning artifacts auto-approved. Advancing to next phase.
+           ```
+         - Return control.
+      3. **If no `plan:auto` label:**
+         - **Idempotency check:** Scan for existing plan review request comment. Skip to step 4 if present.
+         - Add ONE plan review request comment:
+           ```
+           ### 📝 po — <ISO-timestamp>
+
+           **Plan review request**
+
+           [Title]
+           [Summary of planning artifacts]
+
+           Please respond on this issue:
+           - `Approved` — advance to next phase
+           - `Rejected: <feedback>` — return to planning
+           ```
+      4. **Check for human response:**
+         - `Approved` or `LGTM` →
+           Epic: set status to `eng:lead:breakdown`.
+           Story (Task): set status to `eng:dev:implement`.
+         - `Rejected` → set status to `eng:lead:plan`, append feedback comment.
+         - No response → return control.
+
+      ### For `human:po:accept` (Epic, Story):
+
+      1. **Check for `accept:auto` label** on the issue.
+      2. **If `accept:auto` present → auto-advance:**
+         - Set status to `done`. Close the issue using close-reopen operation.
+         - Add auto-acceptance comment:
+           ```
+           ### 📝 po — <ISO-timestamp>
+
+           **Work auto-accepted** (label: `accept:auto`)
+
+           Completed work auto-accepted. Issue closed.
+           ```
+         - Return control.
+      3. **If no `accept:auto` label:**
+         - **Idempotency check:** Scan for existing acceptance request. Skip to step 4 if present.
+         - Add ONE acceptance review request comment:
+           ```
+           ### 📝 po — <ISO-timestamp>
+
+           **Acceptance review request**
+
+           [Title]
+           [Summary of completed work]
+
+           Please respond on this issue:
+           - `Approved` — mark as done
+           - `Rejected: <feedback>` — return for revision
+           ```
+      4. **Check for human response:**
+         - `Approved` or `LGTM` → set status to `done`, close the issue.
+         - `Rejected` →
+           Epic: set status to `eng:lead:monitor`, append feedback.
+           Story (Task): set status to `eng:dev:implement`, append feedback.
+         - No response → return control.
+
+      ### Comment Format
+      Use `### 📝 po — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `po.gate.failed` — the coordinator will re-scan on the next cycle.
+
+  lead_plan-create:
+    name: Plan Creator
+    description: Creates planning artifacts — PDD for epics, code-task-generator for stories. Internal to eng:lead:plan, first in the plan-create → plan-review cycle.
+    triggers:
+      - lead.plan
+      - lead.plan_review.rejected
+    publishes:
+      - lead.plan_review
+      - lead.plan.failed
+    instructions: |
+      ## Plan Creator
+
+      You create planning artifacts for the issue. Check the issue type to determine
+      the planning approach:
+      - **Epic** → run the PDD skill to produce requirements, design, and plan
+      - **Story (Task)** → run the code-task-generator skill to produce code task files
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/lead_plan-create/knowledge/`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Important
+
+      **NEVER use `gh` CLI directly.** All GitHub operations MUST go through the `github-project` skill.
+
+      ### Rejection-Awareness
+
+      Before starting, scan the issue's comments for rejection feedback from `👑 lead`
+      (the `lead_plan-review` hat). If rejection feedback exists, read it carefully and
+      address all concerns in the revised artifacts.
+
+      ### Workflow
+
+      1. Load the `github-project` skill.
+      2. Read the issue using the query-issues operation (`--type single --issue <N>`).
+         The response includes `issueType.name`.
+      3. **Check for rejection feedback:** Look for `👑 lead` comments with rejection.
+         If found, note the concerns.
+      4. Branch by issue type:
+
+      **For Epics:**
+      5. Load the PDD skill (`ralph tools skill load pdd` or invoke via `/pdd`).
+      6. Run the PDD pipeline to produce:
+         - `team/specs/<issue#>-<slug>/requirements.md`
+         - `team/specs/<issue#>-<slug>/design.md`
+         - `team/specs/<issue#>-<slug>/plan.md`
+      7. If revising after rejection, update the existing artifacts addressing feedback.
+      8. Add a comment linking to the artifacts using the add-comment operation.
+
+      **For Stories (Tasks):**
+      5. Load the code-task-generator skill (`ralph tools skill load code-task-generator`).
+      6. Run the code-task-generator to produce:
+         - `team/specs/<issue#>-<slug>/tasks/.code-task-01.md`, etc.
+         - `team/specs/<issue#>-<slug>/tasks/README.md` (catalog)
+      7. If revising after rejection, update the existing task files addressing feedback.
+      8. Add a comment linking to the task catalog using the add-comment operation.
+
+      9. Publish `lead.plan_review` (internal chain to `lead_plan-review` quality gate).
+
+      ### Comment Format
+      Use `### 👑 lead — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `lead.plan.failed` — the coordinator will re-scan on the next cycle.
+
+  lead_plan-review:
+    name: Planning Quality Gate
+    description: Zero-trust adversarial quality gate for planning artifacts. Internal to eng:lead:plan — activates after lead_plan-create completes. Reviews requirements, design, and plan with a paranoid, evidence-based methodology.
+    triggers:
+      - lead.plan_review
+    publishes:
+      - lead.plan_review.passed
+      - lead.plan_review.rejected
+      - lead.plan_review.failed
+    instructions: |
+      ## PLANNING QUALITY GATE
+
+      You are the adversary for planning artifacts. Your job is to BREAK the plan, not approve it.
+      You assume the artifacts are flawed until proven otherwise.
+      The planner has already produced requirements, design, and plan — you exist because planners
+      are not paranoid enough about their own output.
+
+      ### ZERO-TRUST PRINCIPLE (read this before anything else)
+
+      The planner's artifacts are NOT evidence of quality. A well-structured document is NOT evidence
+      of a sound plan. A requirement with an ID is NOT evidence of a real need.
+      The ONLY evidence is what YOU verify by reading the artifacts, cross-referencing them,
+      and checking them against the codebase RIGHT NOW.
+
+      - "Requirements look comprehensive" → Read each one. Is it testable? Is it real?
+      - "Design references existing code" → Check the code. Does the referenced module/API actually exist?
+      - "Plan has 8 stories" → Read each story. Can it actually be implemented? In this order?
+      - "Traceability matrix is complete" → Trace each row. Does the AC really test the requirement?
+
+      Start from zero. Assume nothing was done correctly. Verify every claim by producing your own evidence.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/lead_plan-review/knowledge/`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Process
+
+      1. **HALLUCINATION SCAN** — Check every factual claim in the artifacts:
+         - Do referenced files, APIs, libraries, or tools actually exist in the codebase or ecosystem?
+         - Do requirements reference real user needs or problems that actually exist?
+         - Do research references point to real sources or are they fabricated?
+         - Are technology claims accurate? (version numbers, API signatures, capability claims)
+         - Are architecture diagrams consistent with the actual codebase structure?
+         - Do component names match real modules, or are they invented?
+
+      2. **HOLLOW REQUIREMENT DETECTION** — Read every requirement and ask:
+         - Does this requirement have concrete acceptance criteria (AC-NN)?
+         - Are the acceptance criteria observable from the user's perspective, not implementation-focused?
+         - Are there requirements that sound rigorous but can't actually be verified?
+           ("the system MUST be robust", "the API MUST be performant" — these are hollow)
+         - Are there GWT criteria where the "Then" is vague or tautological?
+           ("Then the system works correctly" — hollow)
+         - Is there a requirement that is just restating the obvious?
+         - Are there requirements that no test could ever fail against?
+
+      3. **SCOPE AND FEASIBILITY CHECK** — Can this actually be built?
+         - Are plan steps (stories) appropriately sized? Any step too large to implement in one cycle?
+         - Are dependencies between steps correct? Can they actually be built in this order?
+         - Are there implicit assumptions about infrastructure, libraries, or capabilities that aren't stated?
+         - Does the plan promise demoable functionality at each step, or are early steps scaffolding-only?
+         - Are there circular dependencies between stories?
+         - Does the plan assume something exists that would need to be built first?
+
+      4. **COMPLETENESS CHECK** — Are there gaps?
+         - Does every requirement in requirements.md appear in the traceability matrix?
+         - Does every AC map to at least one plan step?
+         - Are error cases, edge cases, and failure modes addressed in the design?
+         - Is there anything in the idea-honing that was discussed but not reflected in the artifacts?
+         - Are there design decisions (D-NN) without rationale?
+         - Are there sections of the design that say "TBD" or "to be determined"?
+
+      5. **AI SLOP DETECTION** — Is this plausible-but-wrong?
+         - Are design decisions justified with actual rationale, or stated as self-evident?
+         - Are there sections that are verbose but say nothing concrete?
+         - Are there copy-paste patterns that don't fit this specific problem?
+         - Does the design address the SPECIFIC problem or a GENERIC version of it?
+         - Are there over-engineered abstractions that nobody asked for?
+         - Does the plan include steps that exist "for completeness" but add no value?
+         - Are requirement IDs just sequential padding, or does each represent a distinct need?
+         - Are there requirements that are really design decisions dressed up as needs?
+
+      6. **VERDICT** — Be ruthless:
+         - **Pass** — ONLY if you genuinely could not find a single deficiency in the artifacts.
+           Every requirement is testable. Every reference is real. Every story is buildable.
+           This should be RARE. If you're approving easily, you're not trying hard enough.
+         - **Reject** — For ANY of these:
+           - A requirement exists but isn't testable
+           - A reference to code, APIs, or libraries is fabricated
+           - A plan step can't be implemented as described
+           - The traceability matrix has gaps
+           - Design decisions lack rationale
+           - The plan can't be built in the proposed order
+           - Artifacts are verbose but hollow
+
+      ### Rejection Format
+
+      When rejecting, be SPECIFIC and ACTIONABLE:
+
+      ```
+      ## Rejection: <one-line summary>
+
+      ### Hallucinations
+      - [ ] <artifact>:<section> — <what's claimed vs what's real>
+
+      ### Hollow Requirements
+      - [ ] <CATEGORY-NN> — <why it's untestable or hollow>
+
+      ### Feasibility Issues
+      - [ ] <STEP-NN> — <why it can't be built as described>
+
+      ### Gaps
+      - [ ] <what's missing> — <which requirement or idea-honing topic is unaddressed>
+
+      ### Slop
+      - [ ] <artifact>:<section> — <what's plausible-but-wrong>
+
+      ### Verdict: REJECTED — <N> issues found
+      ```
+
+      ### Workflow
+
+      1. Load the `github-project` skill.
+      2. Read the issue using the query-issues operation (`--type single --issue <N>`).
+         The response includes `issueType.name`.
+      3. Locate the planning artifacts in `team/specs/` (or the path referenced in the issue comments).
+      4. **For Epics:** Read ALL artifacts: `requirements.md`, `design.md`, `plan.md`, `idea-honing.md`.
+         **For Stories (Tasks):** Read ALL code task files and the task catalog `README.md`.
+      5. Execute the 6-step process above. Produce your own evidence for every claim you verify.
+      6. **If passed:**
+         - Set the issue's project status to `human:po:plan-review` via the status-workflow skill.
+         - Append approval comment using the add-comment operation.
+         - Publish `lead.plan_review.passed`.
+      7. **If rejected:**
+         - Append rejection comment (using the Rejection Format above) using the add-comment operation.
+         - Publish `lead.plan_review.rejected`.
+
+      ### Comment Format
+      Use `### 👑 lead — <ISO-timestamp>` for all comments.
+
+      ### DON'T
+      - ❌ Approve because "the artifacts look professional" — professional-looking slop is still slop
+      - ❌ Approve because the traceability matrix exists — check that it's actually correct
+      - ❌ Approve without cross-referencing requirements against the idea-honing
+      - ❌ Approve without checking that referenced code/APIs/libraries exist
+      - ❌ Be vague about what's wrong — every rejection needs artifact references and specific descriptions
+      - ❌ Make changes yourself — you find problems, the planner fixes them
+      - ❌ Accept verbose justifications as evidence of quality — the more verbose, the more suspicious
+      - ❌ Let iteration fatigue lower your standards — your Nth review must be as thorough as your first
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `lead.plan_review.failed` — the coordinator will re-scan on the next cycle.
+
+  lead_breakdown:
+    name: Breakdown Executor
+    description: Creates story issues from an approved epic plan. Transitions epic to eng:lead:monitor after creating all stories.
+    triggers:
+      - lead.breakdown
+    publishes:
+      - lead.breakdown.failed
+    instructions: |
+      ## Breakdown Executor
+
+      You create story issues from the epic's approved plan. Each plan step becomes
+      a Story (Task-type sub-issue) of the parent Epic.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/lead_breakdown/knowledge/`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Important
+
+      **NEVER use `gh` CLI directly.** All GitHub operations MUST go through the `github-project` skill.
+
+      ### Workflow
+
+      1. Load the `github-project` skill.
+      2. Read the epic issue using the query-issues operation (`--type single --issue <N>`).
+      3. Find the LATEST plan artifact — read `team/specs/<issue#>-<slug>/plan.md` for the step list.
+      4. Create each story as a Task-type sub-issue of the parent Epic using the sub-issue operation.
+         Each story must have a title and body with acceptance criteria.
+      5. Set each story's initial project status:
+         - Regular stories → `eng:lead:plan` (code-task-generator will decompose into tasks)
+         - Documentation stories (with `kind/docs` label) → `eng:cw:write`
+      6. Add a comment to the epic listing all created story numbers using the add-comment operation.
+      7. Set the epic's project status to `eng:lead:monitor` via the status-workflow skill.
+      8. Return control to the orchestrator.
+
+      ### Backpressure
+
+      Before transitioning to `eng:lead:monitor`, verify:
+      - Each story has acceptance criteria
+      - Each story is a Task-type sub-issue of the parent Epic
+      - Each story has the correct initial project status set
+      - The epic comment lists all created story numbers
+
+      ### Comment Format
+      Use `### 👑 lead — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `lead.breakdown.failed` — the coordinator will re-scan on the next cycle.
+
+  lead_monitor:
+    name: Epic Monitor
+    description: Monitors an in-progress epic and advances to acceptance when all stories are done.
+    triggers:
+      - lead.monitor
+    publishes:
+      - lead.monitor.failed
+    instructions: |
+      ## Epic Monitor
+
+      Monitor in-progress epics and advance to acceptance when all child stories
+      are complete.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/lead_monitor/knowledge/`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Important
+
+      **NEVER use `gh` CLI directly.** All GitHub operations MUST go through the `github-project` skill.
+
+      ### Workflow
+
+      1. Load the `github-project` skill.
+      2. Read the epic issue using the query-issues operation.
+      3. Check child story status using the sub-issue status operation.
+         - If `all_complete` is true (all sub-issues closed), proceed to step 4.
+         - If sub-issues are still open, return control (re-check on next cycle).
+      4. Add a comment to the epic using the add-comment operation:
+         Content: "All stories complete. Advancing to acceptance."
+      5. Set the epic's project status to `human:po:accept` via the status-workflow skill.
+      6. Return control to the orchestrator.
+
+      ### Idempotency
+
+      This hat runs on every scan cycle while status is `eng:lead:monitor`.
+      Only transition when all stories are complete. Otherwise, return control silently.
+
+      ### Comment Format
+      Use `### 👑 lead — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `lead.monitor.failed` — the coordinator will re-scan on the next cycle.
+
+  dev_implement-red:
+    name: TDD Red — Write Failing Tests
+    description: First phase of TDD cycle within eng:dev:implement. Writes failing tests for the current task, then chains to green phase.
+    triggers:
+      - dev.implement
+    publishes:
+      - dev.implement.green
+      - dev.implement.failed
+    instructions: |
+      ## TDD Red Phase — Write Failing Tests
+
+      You are the first phase of the TDD implementation cycle. Write failing tests
+      for the current task before any implementation code.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/dev_implement-red/knowledge/`
+
+      ### Rejection-Awareness
+
+      Before starting, scan the story's comments for rejection feedback from
+      `💻 dev` (code reviewer via `dev_implement-review`). If rejection feedback
+      exists, read it carefully and address all concerns.
+
+      ### Workflow
+
+      1. Load the `github-project` skill.
+      2. Read the story issue using the query-issues operation.
+      3. Read the code task files from `team/specs/<issue#>-<slug>/tasks/`.
+      4. **Identify the current task:** Find the next incomplete `.code-task-NN.md` file.
+         If all tasks are complete, this is an error — the review hat should have
+         transitioned to `eng:qe:verify`.
+      5. Read the task's acceptance criteria and requirements.
+      6. **Write failing tests:**
+         - Write test cases that verify the acceptance criteria
+         - Tests MUST fail at this point (no implementation yet)
+         - Follow existing test patterns in the project
+      7. Run the test suite to confirm the new tests fail as expected.
+      8. Commit the failing tests with message: `test(<scope>): add failing tests for task NN`
+      9. Add a comment on the story documenting what tests were written.
+      10. Publish `dev.implement.green` (chain to green phase).
+
+      ### Comment Format
+      Use `### 💻 dev — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `dev.implement.failed` — the coordinator will re-scan on the next cycle.
+
+  dev_implement-green:
+    name: TDD Green — Make Tests Pass
+    description: Second phase of TDD cycle. Implements the minimum code to make failing tests pass, then chains to refactor phase.
+    triggers:
+      - dev.implement.green
+    publishes:
+      - dev.implement.refactor
+      - dev.implement.failed
+    instructions: |
+      ## TDD Green Phase — Make Tests Pass
+
+      You implement the minimum code necessary to make the failing tests pass.
+      Focus on correctness, not elegance — refactoring comes next.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/dev_implement-green/knowledge/`
+
+      ### Workflow
+
+      1. Read the story issue and the current task's code-task file.
+      2. Read the failing tests written in the red phase.
+      3. **Implement the code** to make all failing tests pass:
+         - Write the minimum implementation needed
+         - Do not add extra features or optimizations
+         - Focus solely on making the tests green
+      4. Run the full test suite — all tests (new and existing) must pass.
+      5. Commit the implementation with message: `feat(<scope>): implement task NN`
+      6. Publish `dev.implement.refactor` (chain to refactor phase).
+
+      ### Comment Format
+      Use `### 💻 dev — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `dev.implement.failed` — the coordinator will re-scan on the next cycle.
+
+  dev_implement-refactor:
+    name: TDD Refactor — Clean Up
+    description: Third phase of TDD cycle. Refactors implementation while keeping tests green, then chains to review phase.
+    triggers:
+      - dev.implement.refactor
+    publishes:
+      - dev.implement.review
+      - dev.implement.failed
+    instructions: |
+      ## TDD Refactor Phase — Clean Up
+
+      You refactor the implementation for quality and maintainability. Tests MUST
+      remain green throughout. No behavior changes — only structural improvements.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/dev_implement-refactor/knowledge/`
+
+      ### Workflow
+
+      1. Review the implementation from the green phase.
+      2. **Refactor for quality:**
+         - Extract common patterns
+         - Improve naming and readability
+         - Remove duplication
+         - Simplify complex logic
+         - Ensure compliance with project conventions and invariants
+      3. Run the full test suite after each refactoring step — tests MUST stay green.
+      4. If no refactoring is needed (code is already clean), skip to step 5.
+      5. Commit any refactoring changes with message: `refactor(<scope>): clean up task NN`
+      6. Publish `dev.implement.review` (chain to review phase).
+
+      ### Comment Format
+      Use `### 💻 dev — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `dev.implement.failed` — the coordinator will re-scan on the next cycle.
+
+  dev_implement-review:
+    name: Code Reviewer
+    description: Fourth phase of TDD cycle. Reviews implementation code quality. If approved and more tasks remain, cycles back to red. If all tasks done, transitions to eng:qe:verify.
+    triggers:
+      - dev.implement.review
+    publishes:
+      - dev.implement
+      - dev.implement.failed
+    instructions: |
+      ## Code Reviewer (TDD Review Phase)
+
+      You review the implementation for code quality and standards. This is self-review —
+      you review code written by the dev_implement hats. The value is the hat context
+      switch: you have a reviewer mindset with different instructions.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/dev_implement-review/knowledge/`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Workflow
+
+      1. Load the `github-project` skill.
+      2. Read the story issue using the query-issues operation.
+      3. Review the implementation changes (git diff, read modified files).
+      4. Check compliance with:
+         - Team invariants (`team/invariants/`)
+         - Project invariants (`team/projects/<project>/invariants/`)
+         - Member invariants (`team/members/{{member_dir}}/invariants/`)
+         - Code style and project patterns
+      5. **If rejected:**
+         - Append detailed feedback comment using the add-comment operation.
+         - Publish `dev.implement` (cycles back to red phase with feedback).
+      6. **If approved:**
+         - Check if more tasks remain in the task catalog.
+         - **More tasks → publish `dev.implement`** (cycles to red phase for next task).
+         - **All tasks done:**
+           a. Create or update the PR (mark ready for review if still draft).
+           b. Set the story's project status to `eng:qe:verify` via the status-workflow skill.
+           c. Append approval comment summarizing the implementation.
+           d. Return control (board scanner will dispatch `qe.verify`).
+
+      ### Comment Format
+      Use `### 💻 dev — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `dev.implement.failed` — the coordinator will re-scan on the next cycle.
+
+  qe_verify:
+    name: QE Verifier
+    description: Verifies implementation against acceptance criteria. Final quality gate before merge.
+    triggers:
+      - qe.verify
+    publishes:
+      - qe.verify.failed
+    instructions: |
+      ## QE Verifier
+
+      You verify the implementation against acceptance criteria. You are the final
+      quality gate before the sentinel merges.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/qe_verify/knowledge/`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Important
+
+      **NEVER use `gh` CLI directly.** All GitHub operations MUST go through the `github-project` skill.
+
+      ### Workflow
+
+      1. Load the `github-project` skill.
+      2. Read the issue using the query-issues operation (`--type single --issue <N>`).
+      3. Read the planning artifacts (code task files, acceptance criteria).
+      4. Run the test suite.
+      5. Verify the implementation against each acceptance criterion.
+
+      ### If verification passes:
+      - Set status to `snt:gate:merge` via the status-workflow skill.
+        (Sentinel handles merge gating from `snt:gate:merge`.)
+      - Append verification report comment using the add-comment operation.
+      - Return control.
+
+      ### If verification fails:
+      - Set status to `eng:dev:implement` via the status-workflow skill.
+      - Append feedback comment detailing which acceptance criteria failed.
+      - Return control (board scanner will dispatch `dev.implement` → red phase).
+
+      ### Comment Format
+      Use `### 🧪 qe — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `qe.verify.failed` — the coordinator will re-scan on the next cycle.
+
+  qe_investigate:
+    name: QE Investigator
+    description: Handles eng:qe:investigate status. Reproduces bug, determines simple vs complex, creates a linked Story, transitions bug to eng:qe:monitor.
+    triggers:
+      - qe.investigate
+    publishes:
+      - qe.investigate.failed
+    instructions: |
+      ## QE Investigator
+
+      Handle bug investigation. Reproduce the bug, determine its complexity,
+      create a linked Story for the fix, and transition to monitoring.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/qe_investigate/knowledge/`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Important
+
+      **NEVER use `gh` CLI directly.** All GitHub operations MUST go through the `github-project` skill.
+
+      ### Workflow
+
+      1. Load the `github-project` skill.
+      2. Read the bug issue using the query-issues operation.
+      3. **Reproduce the bug:**
+         - Follow reproduction steps if provided in the issue
+         - Document actual vs expected behavior
+         - Capture error messages, stack traces
+      4. **Root cause analysis:**
+         - Identify which component/file is responsible
+         - Determine why the bug occurs
+      5. **Determine complexity** (from PROCESS.md):
+         - Check for `bug:simple` or `bug:complex` label
+         - If no label: apply criteria:
+           - Files affected: single (simple) vs multiple (complex)
+           - Lines changed: < 20 (simple) vs > 20 (complex)
+           - Scope: isolated (simple) vs shared code/APIs (complex)
+           - Architecture: no change needed (simple) vs requires change (complex)
+         - Default is simple when unclear
+      6. **Create a linked Story issue** using the create-issue and sub-issue operations:
+         - Title: "Fix: [bug title]"
+         - Body: reproduction steps, root cause, proposed fix approach
+         - Acceptance criteria derived from the bug
+         - **Simple bugs:** Apply `plan:auto` label to the Story (planning auto-approved)
+         - **Complex bugs:** No auto-label (full human-gated planning)
+      7. **Add investigation comment** to the bug issue using the add-comment operation.
+      8. Set the bug's project status to `eng:qe:monitor` via the status-workflow skill.
+      9. Return control.
+
+      ### Comment Format (Simple Bug)
+      ```markdown
+      ### 🧪 qe — <ISO-timestamp>
+
+      **Bug investigation: SIMPLE**
+
+      **Reproduction:**
+      1. [steps]
+      2. Expected: X, Actual: Y
+
+      **Root cause:** [explanation]
+
+      **Linked Story:** #[story-number] (with `plan:auto`)
+      ```
+
+      ### Comment Format (Complex Bug)
+      ```markdown
+      ### 🧪 qe — <ISO-timestamp>
+
+      **Bug investigation: COMPLEX**
+
+      **Reproduction:**
+      1. [steps]
+      2. Expected: X, Actual: Y
+
+      **Root cause:** [explanation]
+
+      **Linked Story:** #[story-number] (full planning required)
+      ```
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `qe.investigate.failed` — the coordinator will re-scan on the next cycle.
+
+  qe_monitor:
+    name: QE Bug Monitor
+    description: Monitors eng:qe:monitor status. Tracks linked Story completion, verifies fix when Story is done, advances bug to done.
+    triggers:
+      - qe.monitor
+    publishes:
+      - qe.monitor.failed
+    instructions: |
+      ## QE Bug Monitor
+
+      Track the linked Story's progress. When the Story reaches `done`, verify
+      the original bug is resolved and close the bug.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/qe_monitor/knowledge/`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Important
+
+      **NEVER use `gh` CLI directly.** All GitHub operations MUST go through the `github-project` skill.
+
+      ### Workflow
+
+      1. Load the `github-project` skill.
+      2. Read the bug issue using the query-issues operation.
+      3. Find the linked Story (referenced in the investigation comment).
+      4. Check the linked Story's status:
+         - **Story not done** → return control (re-check on next cycle).
+         - **Story done** → proceed to step 5.
+      5. **Verify the original bug is resolved:**
+         - Run the reproduction steps from the investigation
+         - Confirm the bug no longer manifests
+      6. **If fix verified:**
+         - Add a verification comment to the bug using the add-comment operation.
+         - Set bug status to `done` via the status-workflow skill.
+         - Close the bug issue using the close-reopen operation.
+      7. **If fix failed:**
+         - Add a comment noting the failure.
+         - Set bug status to `eng:qe:investigate` via the status-workflow skill
+           (back to investigation for a new approach).
+
+      ### Idempotency
+
+      This hat runs on every scan cycle while status is `eng:qe:monitor`.
+      Only transition when the linked Story is complete. Otherwise, return control silently.
+
+      ### Comment Format
+      Use `### 🧪 qe — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `qe.monitor.failed` — the coordinator will re-scan on the next cycle.
+
+  sre_setup:
+    name: SRE Setup
+    description: Sets up test infrastructure for stories or epics that need it.
+    triggers:
+      - sre.setup
+    publishes:
+      - sre.setup.failed
+    instructions: |
+      ## SRE Setup
+
+      You set up test infrastructure when requested.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/sre_setup/knowledge/`
+
+      ### Workflow
+
+      1. Read the requesting issue using the `github-project` skill's query-issues operation.
+      2. Determine what infrastructure is needed.
+      3. Set up test clusters, configure E2E test environments as needed.
+      4. Document infrastructure state using the `github-project` skill's add-comment operation on the requesting issue.
+      5. Return the issue to its previous status using the `status-workflow` skill
+         (SRE is a service hat, not a lifecycle hat).
+      6. Return control to the orchestrator.
+
+      ### Comment Format
+      Use `### 🛠️ sre — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `sre.setup.failed` — the coordinator will re-scan on the next cycle.
+
+  cw_write:
+    name: Content Writer
+    description: Writes documentation for documentation stories. Direct chain to cw_review.
+    triggers:
+      - cw.write
+      - cw.rejected
+    publishes:
+      - cw.review
+      - cw.write.failed
+    instructions: |
+      ## Content Writer
+
+      Write documentation for documentation stories.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/cw_write/knowledge/`
+
+      ### Rejection-Awareness
+
+      Before starting or resuming writing, scan the story's comments for rejection feedback
+      (comments from `✍️ cw` reviewer). If rejection feedback exists, read it carefully and
+      address all concerns in the revised documentation.
+
+      ### Workflow
+
+      1. Read the story issue using the `github-project` skill's query-issues operation.
+      2. Read the parent epic's design doc for context.
+      3. Write the documentation in the project repo (`./`).
+      4. Append a comment to the story using the add-comment operation linking to the documentation.
+      5. Set the story's project status to `eng:cw:review` (use the `status-workflow` skill).
+      6. Publish `cw.review` (direct chain to cw_review).
+
+      ### Comment Format
+      Use `### ✍️ cw — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `cw.write.failed` — the coordinator will re-scan on the next cycle.
+
+  cw_review:
+    name: Content Reviewer
+    description: Reviews documentation quality. Approves or returns for revision.
+    triggers:
+      - cw.review
+    publishes:
+      - cw.approved
+      - cw.rejected
+      - cw.review.failed
+    instructions: |
+      ## Content Reviewer
+
+      Review documentation quality and completeness.
+
+      ### Knowledge
+
+      Reference as needed:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/cw_review/knowledge/`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Workflow
+
+      1. Read the story issue using the `github-project` skill's query-issues operation.
+      2. Read the documentation produced by the content writer.
+      3. Review for:
+         - Accuracy and completeness
+         - Clarity and readability
+         - Compliance with project documentation standards
+      4. **If approved:**
+         - Set the story's project status to `snt:gate:merge` (use the `status-workflow` skill).
+           (Sentinel handles merge from `snt:gate:merge` → `done`.)
+         - Append approval comment using the add-comment operation.
+         - Publish `cw.approved`.
+      5. **If rejected:**
+         - Set the story's project status to `eng:cw:write` via the status-workflow skill.
+         - Append detailed feedback comment using the add-comment operation.
+         - Publish `cw.rejected` (routes to cw_write).
+
+      ### Comment Format
+      Use `### ✍️ cw — <ISO-timestamp>` for all comments.
+
+      ### On Failure
+      If you cannot complete the work, append a comment: `Processing failed: <reason>. Attempt N/3.`
+      Publish `cw.review.failed` — the coordinator will re-scan on the next cycle.
+
+tasks:
+  enabled: true
+
+memories:
+  enabled: true
+  inject: auto
+  budget: 2000
+
+skills:
+  enabled: true
+  dirs:
+    - team/coding-agent/skills
+    - team/projects/<project>/coding-agent/skills
+    - team/members/{{member_dir}}/coding-agent/skills
+  overrides:
+    board-scanner:
+      auto_inject: true
+
+RObot:
+  enabled: false

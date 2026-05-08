@@ -604,10 +604,11 @@ pub fn run() -> Result<()> {
                         cliclack::log::success("GitHub App created and installed successfully!")?;
 
                         // Let the user confirm before proceeding — they may still be in the browser
-                        if {
+                        let is_tty = {
                             use std::io::IsTerminal;
                             std::io::stdin().is_terminal()
-                        } {
+                        };
+                        if is_tty {
                             eprint!("  Press Enter to continue...");
                             let _ = std::io::stdin().read_line(&mut String::new());
                         }

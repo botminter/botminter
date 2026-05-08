@@ -1,0 +1,51 @@
+# Telegram bridge — identity management recipes
+# External bridge: no lifecycle commands (start/stop/health)
+
+# Register a bot token for a user identity.
+# The bot token comes from environment variable BM_BRIDGE_TOKEN_{USERNAME} (uppercased)
+# or from the bridge config. This recipe validates the token format and stores it.
+onboard username:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "$BRIDGE_CONFIG_DIR"
+    # Token from env var (uppercased username) or fail
+    upper_name=$(echo "{{username}}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+    eval "token=\${BM_BRIDGE_TOKEN_${upper_name}:-}"
+    if [ -z "$token" ]; then
+        echo "Error: Set BM_BRIDGE_TOKEN_${upper_name} with the bot token from @BotFather" >&2
+        exit 1
+    fi
+    # Validate token format (numeric_id:alphanumeric)
+    if ! echo "$token" | grep -qE '^[0-9]+:[A-Za-z0-9_-]+$'; then
+        echo "Error: Token format invalid. Expected format: 123456:ABC-DEF from @BotFather" >&2
+        exit 1
+    fi
+    # Extract bot ID from token
+    bot_id=$(echo "$token" | cut -d: -f1)
+    cat > "$BRIDGE_CONFIG_DIR/config.json" <<ENDJSON
+    {"username": "{{username}}", "user_id": "bot${bot_id}", "token": "${token}"}
+    ENDJSON
+
+# Rotate credentials — replace the bot token for a user
+rotate username:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "$BRIDGE_CONFIG_DIR"
+    upper_name=$(echo "{{username}}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+    eval "token=\${BM_BRIDGE_TOKEN_${upper_name}:-}"
+    if [ -z "$token" ]; then
+        echo "Error: Set BM_BRIDGE_TOKEN_${upper_name} with the new bot token" >&2
+        exit 1
+    fi
+    if ! echo "$token" | grep -qE '^[0-9]+:[A-Za-z0-9_-]+$'; then
+        echo "Error: Token format invalid. Expected format: 123456:ABC-DEF from @BotFather" >&2
+        exit 1
+    fi
+    bot_id=$(echo "$token" | cut -d: -f1)
+    cat > "$BRIDGE_CONFIG_DIR/config.json" <<ENDJSON
+    {"username": "{{username}}", "user_id": "bot${bot_id}", "token": "${token}"}
+    ENDJSON
+
+# Remove a bot identity — no API call needed, just acknowledge
+remove username:
+    @echo "telegram: removed {{username}}" >&2

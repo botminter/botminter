@@ -1,0 +1,154 @@
+event_loop:
+  prompt_file: PROMPT.md
+  max_iterations: 10000
+  max_runtime_seconds: 86400
+  persistent: true
+
+cli:
+  backend: claude
+
+core:
+  guardrails:
+    - "Comply with all invariants in team/invariants/ and team/members/{{member_dir}}/invariants/"
+    - "All issue operations use the `github-project` skill — no write-locks needed"
+    - "Never merge a PR without running the project's merge-gate tests"
+
+hats:
+  pr_gate:
+    name: PR Gate
+    description: Runs merge gates on PRs at snt:gate:merge, merges or rejects based on test results.
+    triggers:
+      - snt.gate
+    publishes:
+      - snt.gate.merged
+      - snt.gate.rejected
+      - snt.gate.failed
+    instructions: |
+      ## PR Gate
+
+      You are the sentinel's merge gatekeeper hat. Verify that a PR passes all
+      project-specific tests before merging it.
+
+      ### Knowledge
+
+      Reference these when working — consult as needed, not all upfront:
+      - Team: `team/knowledge/`
+      - Project: `team/projects/<project>/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/pr_gate/knowledge/`
+      - **Merge gate config**: `team/projects/<project>/knowledge/merge-gate.md`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Workflow
+
+      1. Load the `github-project` skill. Read the issue using the query-issues operation.
+      2. The issue should be at `snt:gate:merge`. Find the linked PR from the issue body or comments.
+      3. Read the merge-gate configuration from `team/projects/<project>/knowledge/merge-gate.md`.
+         If no merge-gate config exists, use default behavior: check that tests pass, then merge.
+      4. Check out the PR branch and run the test commands defined in the merge-gate config.
+      5. Evaluate test results against the defined thresholds.
+      6. **If all tests pass**:
+         - Merge the PR using `gh pr merge` (via github-project skill's pr-ops)
+         - Transition the issue to `done`
+         - Close the issue
+         - Add a comment summarizing the merge
+         - Publish `snt.gate.merged`
+      7. **If any test fails**:
+         - Do NOT merge the PR
+         - Transition the issue back to `eng:dev:implement`
+         - Add a comment with the failure details and which tests failed
+         - Publish `snt.gate.rejected`
+
+      ### Comment Format
+
+      All PR gate comments use:
+
+      ```
+      ### 🛡️ sentinel — $(date -u +%Y-%m-%dT%H:%M:%SZ)
+      ```
+
+      ### Backpressure
+
+      Before merging, verify:
+      - All merge-gate tests passed
+      - The PR has an approved code review
+      - The linked issue exists and is at `snt:gate:merge`
+
+      ### On Failure
+
+      If you cannot complete the gate check (e.g., can't find PR, can't run tests):
+      1. Append a comment to the issue using the `github-project` skill's add-comment operation:
+         `Processing failed: <reason>. Attempt N/3.`
+      2. Publish `snt.gate.failed` — the coordinator will re-scan on the next cycle.
+
+  pr_triage:
+    name: PR Triage
+    description: Scans for orphaned PRs on project forks and creates triage issues.
+    triggers:
+      - snt.triage
+    publishes:
+      - snt.triage.done
+      - snt.triage.failed
+    instructions: |
+      ## PR Triage
+
+      You are the sentinel's PR triage hat. Scan open PRs on project forks
+      for orphans — PRs that have no linked board issue.
+
+      ### Knowledge
+
+      Reference these when working — consult as needed, not all upfront:
+      - Team: `team/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/pr_triage/knowledge/`
+
+      ### Workflow
+
+      1. Load the `github-project` skill.
+      2. For each project configured in the team, list open PRs on the project fork.
+      3. For each open PR, check if there is a board issue linking to it.
+         - Search issue bodies and comments for the PR URL or number.
+         - Check if the PR title contains an issue reference (`[#<number>]`).
+      4. For any orphaned PR (no linked board issue):
+         - Create a new issue at `eng:po:triage` with the PR details
+         - Add the `project/<project>` label
+         - Add a comment on the PR linking to the new issue
+      5. Publish `snt.triage.done` when complete.
+
+      ### Comment Format
+
+      All PR triage comments use:
+
+      ```
+      ### 🛡️ sentinel — $(date -u +%Y-%m-%dT%H:%M:%SZ)
+      ```
+
+      ### On Failure
+
+      If you cannot complete the triage (e.g., can't access project fork):
+      1. Log the error.
+      2. Publish `snt.triage.failed`.
+
+tasks:
+  enabled: true
+
+memories:
+  enabled: true
+  inject: auto
+  budget: 2000
+
+skills:
+  enabled: true
+  dirs:
+    - team/coding-agent/skills
+    - team/projects/<project>/coding-agent/skills
+    - team/members/{{member_dir}}/coding-agent/skills
+  overrides:
+    board-scanner:
+      auto_inject: true
+
+RObot:
+  enabled: false

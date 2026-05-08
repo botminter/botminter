@@ -87,6 +87,7 @@ To reset a profile to its built-in defaults, run `bm profiles init` and confirm 
 | Team knowledge | `knowledge/` | Shared norms (commit conventions, PR standards, communication protocols) |
 | Team invariants | `invariants/` | Quality rules (code review required, test coverage) |
 | Member skeletons | `roles/` | Pre-configured role definitions with Ralph configs and prompts |
+| Meetings | `botminter.yml` (`meetings` list) | Named shortcuts for focused agent sessions (see [Meetings](meetings.md)) |
 | Shared coding-agent files | `coding-agent/` | Skills, sub-agents, and hooks (e.g., `settings.json`) available to all members |
 | Profile skills | `skills/` | Profile-level skills (e.g., `knowledge-manager` for interactive knowledge management) |
 | Formations | `formations/` | Deployment targets (`local`, `k8s`) with formation configs and optional manager hats |
@@ -306,6 +307,7 @@ The same profile can be used to create multiple teams (`bm init` with the same p
 
 ## Related topics
 
+- [Meetings](meetings.md) — focused agent sessions defined in profiles
 - [Architecture](architecture.md) — where profiles fit in the generation model
 - [Knowledge & Invariants](knowledge-invariants.md) — recursive scoping model
 - [Process Conventions](../reference/process.md) — full label scheme and issue format

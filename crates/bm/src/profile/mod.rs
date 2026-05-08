@@ -19,14 +19,14 @@ pub(crate) use extraction::extract_member_from;
 pub use member::{auto_suffix, finalize_member_manifest, hire_member, HireResult};
 pub(crate) use member::render_member_placeholders;
 pub use manifest::{
-    BridgeDef, CodingAgentDef, LabelDef, OperatorDef, ProfileManifest, ProjectDef, RoleDef,
-    StatusDef, ViewDef,
+    BridgeDef, CodingAgentDef, LabelDef, Meeting, OperatorDef, ProfileManifest,
+    ProjectDef, RoleDef, StatusDef, ViewDef,
 };
 pub use team_repo::{
-    augment_manifest_with_projects, credentials_env, discover_member_dirs, gather_team_summary,
-    infer_role_from_dir, list_files_in_dir, list_scope_files, list_subdirs, read_member_role,
-    read_team_projects, read_team_repo_manifest, read_team_schema, record_bridge_in_manifest,
-    validate_bridge_selection, validate_knowledge_path, TeamSummary,
+    augment_manifest_with_projects, credentials_env, detect_meetings, discover_member_dirs,
+    gather_team_summary, infer_role_from_dir, list_files_in_dir, list_scope_files, list_subdirs,
+    read_member_role, read_team_projects, read_team_repo_manifest, read_team_schema,
+    record_bridge_in_manifest, validate_bridge_selection, validate_knowledge_path, TeamSummary,
 };
 
 use std::fs;
@@ -998,6 +998,33 @@ mod tests {
                     assert!(!bridge.name.is_empty(), "Bridge name should not be empty in profile '{}'", name);
                     assert!(!bridge.bridge_type.is_empty(), "Bridge type should not be empty in profile '{}'", name);
                 }
+            }
+        }
+    }
+
+    // ── Meeting profile-based tests ────────────────────
+
+    #[test]
+    fn all_profile_meetings_have_valid_fields() {
+        let (_tmp, base) = setup_disk_profiles();
+        for name in list_profiles_from(&base).unwrap() {
+            let manifest = read_manifest_from(&name, &base).unwrap();
+            for meeting in &manifest.meetings {
+                assert!(
+                    !meeting.name.is_empty(),
+                    "Meeting name should not be empty in profile '{}'", name
+                );
+                assert!(
+                    !meeting.instructions.trim().is_empty(),
+                    "Meeting '{}' instructions should not be empty in profile '{}'",
+                    meeting.name, name
+                );
+                let valid_roles: Vec<&str> = manifest.roles.iter().map(|r| r.name.as_str()).collect();
+                assert!(
+                    valid_roles.contains(&meeting.member.as_str()),
+                    "Meeting '{}' member '{}' is not a valid role in profile '{}'. Valid: {:?}",
+                    meeting.name, meeting.member, name, valid_roles
+                );
             }
         }
     }

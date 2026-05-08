@@ -33,6 +33,11 @@ pub struct ProfileManifest {
     /// Operator identity (set during `bm init --bridge` for local bridges).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operator: Option<OperatorDef>,
+    /// Meetings declared by this profile. Each meeting is a named shortcut
+    /// for launching an agent with custom instructions — available via
+    /// `bm meetings <name>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub meetings: Vec<Meeting>,
 }
 
 /// Operator identity configuration.
@@ -95,6 +100,22 @@ pub struct CodingAgentDef {
     /// CLI flag to skip permission prompts (e.g. "--dangerously-skip-permissions")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skip_permissions_flag: Option<String>,
+}
+
+/// A named shortcut for launching an agent with custom instructions and an
+/// initial prompt, available via `bm meetings <name>`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Meeting {
+    pub name: String,
+    pub description: String,
+    pub member: String,
+    /// The meeting's system prompt. Written to a temp file and passed via
+    /// `--append-system-prompt-file`. This replaces the full meta-prompt
+    /// pipeline that `bm chat` uses.
+    pub instructions: String,
+    /// Initial message prepended to user-provided trailing args.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
 }
 
 /// Defines a role-based view for the GitHub Project board.
@@ -285,5 +306,117 @@ bridges: []
         assert_eq!(bridge.display_name, "Telegram");
         assert_eq!(bridge.description, "Bot API");
         assert_eq!(bridge.bridge_type, "external");
+    }
+
+    // ── Meeting tests ──────────────────────────────────────────
+
+    #[test]
+    fn manifest_with_meetings_deserializes() {
+        let yaml = r#"
+name: test
+display_name: "Test Profile"
+description: "Test"
+version: "1.0.0"
+schema_version: "1.0"
+meetings:
+  - name: planning
+    description: "Collaborative planning session"
+    member: engineer
+    instructions: |
+      You are an engineer in a planning meeting.
+      Help the user plan their work.
+    prompt: start
+  - name: verification
+    description: "Verify acceptance criteria"
+    member: engineer
+    instructions: |
+      You are an engineer in a verification meeting.
+"#;
+        let manifest: ProfileManifest = serde_yml::from_str(yaml).unwrap();
+        assert_eq!(manifest.meetings.len(), 2);
+
+        let planning = &manifest.meetings[0];
+        assert_eq!(planning.name, "planning");
+        assert_eq!(planning.member, "engineer");
+        assert!(planning.instructions.contains("planning meeting"));
+        assert_eq!(planning.prompt, Some("start".into()));
+
+        let verification = &manifest.meetings[1];
+        assert_eq!(verification.name, "verification");
+        assert!(verification.instructions.contains("verification meeting"));
+        assert!(verification.prompt.is_none());
+    }
+
+    #[test]
+    fn manifest_no_meetings_deserializes() {
+        let yaml = r#"
+name: test
+display_name: "Test Profile"
+description: "Test"
+version: "1.0.0"
+schema_version: "1.0"
+"#;
+        let manifest: ProfileManifest = serde_yml::from_str(yaml).unwrap();
+        assert!(manifest.meetings.is_empty());
+    }
+
+    #[test]
+    fn manifest_empty_meetings_deserializes() {
+        let yaml = r#"
+name: test
+display_name: "Test Profile"
+description: "Test"
+version: "1.0.0"
+schema_version: "1.0"
+meetings: []
+"#;
+        let manifest: ProfileManifest = serde_yml::from_str(yaml).unwrap();
+        assert!(manifest.meetings.is_empty());
+    }
+
+    #[test]
+    fn meeting_no_prompt_deserializes() {
+        let yaml = r#"
+name: test
+display_name: "Test Profile"
+description: "Test"
+version: "1.0.0"
+schema_version: "1.0"
+meetings:
+  - name: planning
+    description: "Test"
+    member: engineer
+    instructions: "Do the thing."
+"#;
+        let manifest: ProfileManifest = serde_yml::from_str(yaml).unwrap();
+        assert_eq!(manifest.meetings[0].instructions, "Do the thing.");
+        assert!(manifest.meetings[0].prompt.is_none());
+    }
+
+    #[test]
+    fn meeting_multiline_instructions_roundtrip() {
+        let yaml = r#"
+name: test
+display_name: "Test Profile"
+description: "Test"
+version: "1.0.0"
+schema_version: "1.0"
+meetings:
+  - name: planning
+    description: "Test"
+    member: engineer
+    instructions: |
+      Line one.
+      Line two.
+      Line three.
+    prompt: start
+"#;
+        let manifest: ProfileManifest = serde_yml::from_str(yaml).unwrap();
+        let meeting = &manifest.meetings[0];
+        assert!(meeting.instructions.contains("Line one."));
+        assert!(meeting.instructions.contains("Line two."));
+        assert!(meeting.instructions.contains("Line three."));
+        // YAML | block includes trailing newline
+        assert!(meeting.instructions.ends_with('\n'));
     }
 }

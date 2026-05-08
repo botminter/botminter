@@ -332,6 +332,58 @@ bm chat <member> [-t <team>] [--hat <hat>] [--render-system-prompt]
 - In normal mode: writes the meta-prompt to a temp file and launches the coding agent via `formation.exec_in()` (v2 teams) or direct process exec (v1 teams)
 - Requires a workspace created by `bm teams sync`
 
+### `bm meetings`
+
+Run a meeting with a team member. Meetings are named shortcuts for launching an agent with custom instructions and an initial prompt, defined in the profile's `botminter.yml`.
+
+```bash
+bm meetings <name> [args...] [-t <team>] [-a]
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `<name>` | Yes | Meeting name (e.g., `planning`, `verification`) |
+| `[args...]` | No | Free-form input passed to the meeting |
+| `-t <team>` | No | Team to operate on |
+| `-a` | No | Run with `--dangerously-skip-permissions` |
+
+**Behavior:**
+
+- Resolves the member for the meeting's role from the team repo
+- Writes the meeting's `instructions` to a temp file as the system prompt (bypasses the `bm chat` meta-prompt pipeline)
+- Combines the meeting's `prompt` with any user-provided trailing input as the initial message
+- Launches the coding agent via `launch_session()`
+- Meeting subcommands are only available when a profile with meetings is active
+
+**Meeting YAML schema:**
+
+```yaml
+meetings:
+  - name: planning
+    description: "Collaborative planning session"
+    member: engineer            # Role name — resolved to a hired member
+    instructions: |             # System prompt — written to temp file
+      You are an engineer in a planning meeting.
+      ...meeting-specific instructions...
+    prompt: start               # Optional initial message
+```
+
+!!! warning "Flag ordering"
+    Flags (`-t`, `-a`) must appear **before** free-form input. Flags placed after the first word of input are captured as text sent to the agent.
+
+**Examples:**
+
+```bash
+# Start a planning meeting
+bm meetings planning
+
+# Start with context
+bm meetings planning plan the auth feature
+
+# Override team (flag BEFORE input)
+bm meetings planning -t my-team plan something
+```
+
 ### `bm minty`
 
 Launch Minty, the BotMinter interactive assistant.

@@ -1,0 +1,26 @@
+apiVersion: botminter.dev/v1alpha1
+kind: Bridge
+metadata:
+  name: rocketchat
+  displayName: "Rocket.Chat"
+  description: "Rocket.Chat bridge for team communication (local Podman Pod)"
+
+spec:
+  type: local
+  configSchema: schema.json
+
+  lifecycle:
+    start: start
+    stop: stop
+    health: health
+
+  identity:
+    onboard: onboard
+    rotate-credentials: rotate
+    remove: remove
+
+  room:
+    create: room-create
+    list: room-list
+
+  configDir: "$BRIDGE_CONFIG_DIR"

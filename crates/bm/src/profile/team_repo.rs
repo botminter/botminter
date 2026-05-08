@@ -1,10 +1,57 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
-use super::{BridgeDef, ProfileManifest, ProjectDef};
+use super::{BridgeDef, Meeting, ProfileManifest, ProjectDef};
+
+const WORKSPACE_MARKER: &str = ".botminter.workspace";
+
+/// Detects available profile meetings by trying two strategies:
+/// 1. Workspace discovery — walk up from CWD looking for `.botminter.workspace`
+/// 2. Config fallback — load default team from `~/.botminter/config.yml`
+///
+/// Returns an empty vec if no meetings are found or no team is configured.
+pub fn detect_meetings() -> Vec<Meeting> {
+    if let Some(meetings) = detect_meetings_from_workspace() {
+        return meetings;
+    }
+    detect_meetings_from_config().unwrap_or_default()
+}
+
+fn detect_meetings_from_workspace() -> Option<Vec<Meeting>> {
+    let cwd = std::env::current_dir().ok()?;
+    let ws_root = discover_workspace_root(&cwd)?;
+    let manifest_path = ws_root.join("team").join("botminter.yml");
+    let contents = fs::read_to_string(manifest_path).ok()?;
+    let manifest: ProfileManifest = serde_yml::from_str(&contents).ok()?;
+    Some(manifest.meetings)
+}
+
+fn detect_meetings_from_config() -> Option<Vec<Meeting>> {
+    let cfg = crate::config::load().ok()?;
+    let team = crate::config::resolve_team(&cfg, None).ok()?;
+    let team_repo = team.path.join("team");
+    let manifest = read_team_repo_manifest(&team_repo).ok()?;
+    if manifest.meetings.is_empty() {
+        None
+    } else {
+        Some(manifest.meetings)
+    }
+}
+
+fn discover_workspace_root(start: &Path) -> Option<PathBuf> {
+    let mut current = start.to_path_buf();
+    loop {
+        if current.join(WORKSPACE_MARKER).exists() {
+            return Some(current);
+        }
+        if !current.pop() {
+            return None;
+        }
+    }
+}
 
 /// Minimal manifest for reading project count.
 #[derive(Debug, Deserialize)]

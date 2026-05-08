@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "host": {
+      "type": "string",
+      "default": "127.0.0.1",
+      "description": "Tuwunel homeserver host"
+    },
+    "port": {
+      "type": "integer",
+      "default": 8008,
+      "description": "Tuwunel homeserver port"
+    },
+    "server_name": {
+      "type": "string",
+      "default": "localhost",
+      "description": "Matrix server_name for the homeserver"
+    },
+    "registration_token": {
+      "type": "string",
+      "description": "Registration token for creating users"
+    }
+  },
+  "required": ["host"]
+}

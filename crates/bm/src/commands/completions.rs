@@ -122,7 +122,21 @@ pub fn build_cli_with_completions() -> clap::Command {
         "member-project".into(),
     ];
 
-    Cli::command()
+    let meetings = crate::profile::detect_meetings();
+
+    let mut cmd = Cli::command();
+    if !meetings.is_empty() {
+        let mut meetings_cmd = clap::Command::new("meetings")
+            .about("Meet with a team member for a specific purpose");
+        for m in &meetings {
+            let sub = super::meeting::build_meeting_subcommand(m)
+                .mut_arg("team", |a| a.add(make(teams.clone())));
+            meetings_cmd = meetings_cmd.subcommand(sub);
+        }
+        cmd = cmd.subcommand(meetings_cmd);
+    }
+
+    cmd
         // ── init ──────────────────────────────────────────────
         .mut_subcommand("init", |c| {
             c.mut_arg("profile", |a| a.add(make(profiles.clone())))
@@ -557,6 +571,7 @@ projects:
                 Command::Debug { command } => match command {
                     DebugCommand::BrainLogs { .. } => {}
                 },
+                Command::External(_) => {}
                 Command::Completions { .. } => {}
             }
         }

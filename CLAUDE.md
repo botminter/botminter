@@ -41,6 +41,7 @@ bm hire <role> [--name <n>] [-t team] # Hire a member into a role
 bm fire <member> [-t team] [--keep-app] # Fire a member (stop, uninstall App, remove)
 bm credentials export -o <file> [-t team] # Export credentials for machine migration
 bm chat <member> [-t team] [--hat h]  # Interactive session with a member
+bm meetings <name> [args...] [-t team] [-a]  # Run a meeting with a team member
 bm projects add <url> [-t team]       # Add a project to the team
 bm projects list [-t team]            # List configured projects
 bm projects show <project> [-t team]  # Show project details

@@ -1,0 +1,92 @@
+event_loop:
+  prompt_file: PROMPT.md
+  max_iterations: 10000
+  max_runtime_seconds: 86400
+  persistent: true
+
+cli:
+  backend: claude
+
+core:
+  guardrails:
+    - "Comply with all invariants in team/invariants/ and team/members/{{member_dir}}/invariants/"
+    - "All issue operations use the `github-project` skill — no write-locks needed"
+
+hats:
+  executor:
+    name: Executor
+    description: Picks up chief of staff tasks from the board and executes them.
+    triggers:
+      - cos.execute
+    publishes:
+      - cos.execute.done
+      - cos.execute.failed
+    instructions: |
+      ## Executor
+
+      You are the chief of staff's executor hat. Pick up chief of staff tasks and execute them.
+
+      ### Knowledge
+
+      Reference these when working — consult as needed, not all upfront:
+      - Team: `team/knowledge/`
+      - Member: `team/members/{{member_dir}}/knowledge/`
+      - Hat: `team/members/{{member_dir}}/hats/executor/knowledge/`
+
+      ### Status Transitions
+
+      Use the `status-workflow` skill for all project status transitions (`ralph tools skill load status-workflow`).
+
+      ### Workflow
+
+      1. Load the `github-project` skill. Read the issue using the query-issues operation.
+      2. If the issue is in `cos:exec:todo`, transition it to `cos:exec:in-progress`.
+      3. Execute the task described in the issue. Work within the `team/` submodule —
+         this is the team repo where process improvements, knowledge updates,
+         and configuration changes live.
+      4. Commit any changes made in `team/` with an appropriate commit message.
+      5. When complete, transition the issue to `cos:exec:done`.
+      6. Add a comment summarizing what was done using the comment format below.
+
+      ### Comment Format
+
+      All executor comments use:
+
+      ```
+      ### 📋 chief-of-staff — $(date -u +%Y-%m-%dT%H:%M:%SZ)
+      ```
+
+      ### Backpressure
+
+      Before transitioning to `cos:exec:done`, verify:
+      - The task described in the issue was fully completed
+      - Any files changed in `team/` are committed and pushed
+      - No invariants in `team/invariants/` were violated
+
+      ### On Failure
+
+      If you cannot complete the work (e.g., missing context, permission issue):
+      1. Append a comment to the issue using the `github-project` skill's add-comment operation:
+         `Processing failed: <reason>. Attempt N/3.`
+      2. Publish `cos.execute.failed` — the coordinator will re-scan on the next cycle.
+
+tasks:
+  enabled: true
+
+memories:
+  enabled: true
+  inject: auto
+  budget: 2000
+
+skills:
+  enabled: true
+  dirs:
+    - team/coding-agent/skills
+    - team/projects/<project>/coding-agent/skills
+    - team/members/{{member_dir}}/coding-agent/skills
+  overrides:
+    board-scanner:
+      auto_inject: true
+
+RObot:
+  enabled: false

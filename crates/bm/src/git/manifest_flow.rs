@@ -257,8 +257,8 @@ pub fn ensure_app_on_repos(
                      Install it manually: https://github.com/organizations/{org}/settings/installations/{installation_id}"
                 ));
             }
-            RepoInstallationStatus::CheckFailed(_) => {
-                // Non-fatal — the check itself may fail for various reasons
+            RepoInstallationStatus::CheckFailed(err) => {
+                eprintln!("  Warning: could not check App installation on {repo}: {err}");
             }
         }
     }
@@ -493,8 +493,6 @@ impl ManifestFlowServer {
         let stdin_fallback = self.stdin_fallback;
         let api_base = self.state.github_api_base.clone();
         let org = self.state.org.clone();
-        let url = self.start_url.clone();
-
         let rt = tokio::runtime::Runtime::new()
             .context("Failed to create tokio runtime")?;
 

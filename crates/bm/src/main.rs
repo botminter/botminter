@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches, Parser};
 use clap_complete::CompleteEnv;
 
 use bm::cli::{
@@ -12,7 +12,37 @@ use bm::commands;
 fn main() -> Result<()> {
     CompleteEnv::with_factory(commands::completions::build_cli_with_completions).complete();
 
-    let cli = Cli::parse();
+    let meetings = bm::profile::detect_meetings();
+
+    let cli = if meetings.is_empty() {
+        Cli::parse()
+    } else {
+        let mut meetings_cmd = clap::Command::new("meetings")
+            .about("Meet with a team member for a specific purpose");
+        for m in &meetings {
+            meetings_cmd = meetings_cmd.subcommand(commands::meeting::build_meeting_subcommand(m));
+        }
+
+        let cmd = Cli::command().subcommand(meetings_cmd);
+        let matches = cmd.get_matches();
+
+        if let Some(("meetings", meetings_matches)) = matches.subcommand() {
+            if let Some((sub_name, sub_matches)) = meetings_matches.subcommand() {
+                if let Some(m) = meetings.iter().find(|m| m.name == sub_name) {
+                    return commands::meeting::run_meeting(m, sub_matches);
+                }
+            }
+            // `bm meetings` with no subcommand — show help
+            eprintln!("Available meetings:");
+            for m in &meetings {
+                eprintln!("  {:<20} {}", m.name, m.description);
+            }
+            eprintln!("\nRun `bm meetings <name> --help` for details.");
+            std::process::exit(0);
+        }
+
+        Cli::from_arg_matches(&matches).map_err(|e| e.exit()).unwrap()
+    };
 
     match cli.command {
         Command::Init {
@@ -306,6 +336,9 @@ fn main() -> Result<()> {
                 commands::debug::brain_logs(&member, team.as_deref(), lines, entries)?;
             }
         },
+        Command::External(args) => {
+            commands::meeting::run_external(args)?;
+        }
         Command::Completions { shell } => {
             commands::completions::run(shell)?;
         }

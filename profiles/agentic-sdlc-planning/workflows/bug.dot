@@ -1,0 +1,31 @@
+// Bug workflow state machine (4 statuses)
+// Every confirmed bug creates a linked Story.
+// Statuses: human:po:triage, eng:qe:investigate, eng:qe:monitor, done
+
+digraph bug {
+    rankdir=LR;
+    graph [fontname="Helvetica", bgcolor="transparent"];
+    node [fontname="Helvetica", style="filled", fontsize=11];
+    edge [fontname="Helvetica", fontsize=9];
+
+    // Human gate (amber, octagon)
+    node [fillcolor="#FCD34D", color="#B45309", shape=octagon];
+    "human:po:triage" [label="human:po:triage\n(GATE)"];
+
+    // Engineer QE hat (cyan)
+    node [fillcolor="#67E8F9", color="#155E75", shape=box];
+    "eng:qe:investigate";
+    "eng:qe:monitor";
+
+    // Terminal (done)
+    node [fillcolor="#D1D5DB", color="#374151", shape=doublecircle];
+    "done";
+
+    // --- Happy path transitions ---
+    "human:po:triage" -> "eng:qe:investigate" [label="confirmed"];
+    "eng:qe:investigate" -> "eng:qe:monitor" [label="story created"];
+    "eng:qe:monitor" -> "done" [label="fix verified"];
+
+    // --- Rejection loop (dashed red) ---
+    "eng:qe:monitor" -> "eng:qe:investigate" [label="fix failed", style=dashed, color="#DC2626", fontcolor="#DC2626"];
+}

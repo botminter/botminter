@@ -18,12 +18,14 @@ nav:
     - Knowledge & Invariants: concepts/knowledge-invariants.md
     - Coordination Model: concepts/coordination-model.md
     - Profiles: concepts/profiles.md
+    - Meetings: concepts/meetings.md
     - Bridges: concepts/bridges.md
   - How-To Guides:
     - Generate a Team Repo: how-to/generate-team-repo.md
     - Manage Members: how-to/manage-members.md
     - Launch Members: how-to/launch-members.md
     - Manage Knowledge: how-to/manage-knowledge.md
+    - Run Meetings: how-to/run-meetings.md
     - Bridge Setup: how-to/bridge-setup.md
   - Reference:
     - CLI Commands: reference/cli.md
