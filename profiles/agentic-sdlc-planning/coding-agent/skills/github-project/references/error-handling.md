@@ -46,8 +46,8 @@ if [ -z "$ISSUE_NUM" ]; then
   exit 1
 fi
 
-if [ "$KIND" != "epic" ] && [ "$KIND" != "story" ] && [ "$KIND" != "bug" ]; then
-  echo "❌ ERROR: --kind must be 'epic', 'story', or 'bug'"
+if [ "$KIND" != "epic" ] && [ "$KIND" != "story" ] && [ "$KIND" != "task" ] && [ "$KIND" != "bug" ]; then
+  echo "❌ ERROR: --kind must be 'epic', 'story', 'task', or 'bug'"
   exit 1
 fi
 ```

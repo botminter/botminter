@@ -45,7 +45,7 @@ hats:
 
       1. Load the `github-project` skill.
       2. Read the issue using the query-issues operation (`--type single --issue <N>`).
-         The response includes `issueType.name` (Epic, Task, Bug) and labels.
+         The response includes `issueType.name` (Epic, Story, Task, Bug) and labels.
       3. Determine the issue's current project status.
       4. Branch to the appropriate handler below.
 
@@ -90,7 +90,7 @@ hats:
       2. **If `plan:auto` present → auto-advance:**
          - Query issue type.
            Epic → set status to `eng:lead:breakdown`.
-           Story (Task) → set status to `eng:dev:implement`.
+           Story → set status to `eng:lead:breakdown`.
          - Add auto-approval comment:
            ```
            ### 📝 po — <ISO-timestamp>
@@ -118,7 +118,7 @@ hats:
       4. **Check for human response:**
          - `Approved` or `LGTM` →
            Epic: set status to `eng:lead:breakdown`.
-           Story (Task): set status to `eng:dev:implement`.
+           Story: set status to `eng:lead:breakdown`.
          - `Rejected` → set status to `eng:lead:plan`, append feedback comment.
          - No response → return control.
 
@@ -155,7 +155,7 @@ hats:
          - `Approved` or `LGTM` → set status to `done`, close the issue.
          - `Rejected` →
            Epic: set status to `eng:lead:monitor`, append feedback.
-           Story (Task): set status to `eng:dev:implement`, append feedback.
+           Story: set status to `eng:dev:implement`, append feedback.
          - No response → return control.
 
       ### Comment Format
@@ -167,7 +167,7 @@ hats:
 
   lead_plan-create:
     name: Plan Creator
-    description: Creates planning artifacts — PDD for epics, code-task-generator for stories. Internal to eng:lead:plan, first in the plan-create → plan-review cycle.
+    description: Creates planning artifacts — epic-mgmt (PDD) for epics, story-mgmt for stories. Internal to eng:lead:plan, first in the plan-create → plan-review cycle.
     triggers:
       - lead.plan
       - lead.plan_review.rejected
@@ -179,8 +179,8 @@ hats:
 
       You create planning artifacts for the issue. Check the issue type to determine
       the planning approach:
-      - **Epic** → run the PDD skill to produce requirements, design, and plan
-      - **Story (Task)** → run the code-task-generator skill to produce code task files
+      - **Epic** → run the epic-mgmt skill to produce requirements, design, and plan
+      - **Story** → run the story-mgmt skill to produce code task files
 
       ### Knowledge
 
@@ -214,19 +214,19 @@ hats:
       4. Branch by issue type:
 
       **For Epics:**
-      5. Load the PDD skill (`ralph tools skill load pdd` or invoke via `/pdd`).
-      6. Run the PDD pipeline to produce:
-         - `team/specs/<issue#>-<slug>/requirements.md`
-         - `team/specs/<issue#>-<slug>/design.md`
-         - `team/specs/<issue#>-<slug>/plan.md`
+      5. Load the epic-mgmt skill (`ralph tools skill load epic-mgmt` or invoke via `/epic-mgmt`).
+      6. Run the epic-mgmt pipeline to produce:
+         - `team/specs/<project>/<issue#>-<slug>/requirements.md`
+         - `team/specs/<project>/<issue#>-<slug>/design.md`
+         - `team/specs/<project>/<issue#>-<slug>/plan.md`
       7. If revising after rejection, update the existing artifacts addressing feedback.
       8. Add a comment linking to the artifacts using the add-comment operation.
 
-      **For Stories (Tasks):**
-      5. Load the code-task-generator skill (`ralph tools skill load code-task-generator`).
-      6. Run the code-task-generator to produce:
-         - `team/specs/<issue#>-<slug>/tasks/.code-task-01.md`, etc.
-         - `team/specs/<issue#>-<slug>/tasks/README.md` (catalog)
+      **For Stories:**
+      5. Load the story-mgmt skill (`ralph tools skill load story-mgmt`).
+      6. Run the story-mgmt skill to produce:
+         - `team/specs/<project>/<issue#>-<slug>/tasks/.code-task-01.md`, etc.
+         - `team/specs/<project>/<issue#>-<slug>/tasks/README.md` (catalog)
       7. If revising after rejection, update the existing task files addressing feedback.
       8. Add a comment linking to the task catalog using the add-comment operation.
 
@@ -373,7 +373,7 @@ hats:
          The response includes `issueType.name`.
       3. Locate the planning artifacts in `team/specs/` (or the path referenced in the issue comments).
       4. **For Epics:** Read ALL artifacts: `requirements.md`, `design.md`, `plan.md`, `idea-honing.md`.
-         **For Stories (Tasks):** Read ALL code task files and the task catalog `README.md`.
+         **For Stories:** Read ALL code task files and the task catalog `README.md`.
       5. Execute the 6-step process above. Produce your own evidence for every claim you verify.
       6. **If passed:**
          - Set the issue's project status to `human:po:plan-review` via the status-workflow skill.
@@ -402,7 +402,7 @@ hats:
 
   lead_breakdown:
     name: Breakdown Executor
-    description: Creates story issues from an approved epic plan. Transitions epic to eng:lead:monitor after creating all stories.
+    description: Externalizes approved plans — creates story issues from epic plans or task issues from story task catalogs. Routes epics to eng:lead:monitor and stories to eng:dev:implement.
     triggers:
       - lead.breakdown
     publishes:
@@ -410,8 +410,10 @@ hats:
     instructions: |
       ## Breakdown Executor
 
-      You create story issues from the epic's approved plan. Each plan step becomes
-      a Story (Task-type sub-issue) of the parent Epic.
+      You externalize approved plans into child issues. Check the issue type to
+      determine behavior:
+      - **Epic** → create story issues from plan.md, advance to eng:lead:monitor
+      - **Story** → externalize tasks from .code-task-NN.md files, advance to eng:dev:implement
 
       ### Knowledge
 
@@ -432,24 +434,53 @@ hats:
       ### Workflow
 
       1. Load the `github-project` skill.
-      2. Read the epic issue using the query-issues operation (`--type single --issue <N>`).
-      3. Find the LATEST plan artifact — read `team/specs/<issue#>-<slug>/plan.md` for the step list.
-      4. Create each story as a Task-type sub-issue of the parent Epic using the sub-issue operation.
+      2. Read the issue using the query-issues operation (`--type single --issue <N>`).
+         The response includes `issueType.name` and labels.
+      3. Branch by issue type:
+
+      **For Epics:**
+
+      4. Find the plan artifact — read `team/specs/<project>/<issue#>-<slug>/plan.md` for the story list.
+      5. Create each story as a Story-type sub-issue of the parent Epic using the sub-issue operation.
          Each story must have a title and body with acceptance criteria.
-      5. Set each story's initial project status:
-         - Regular stories → `eng:lead:plan` (code-task-generator will decompose into tasks)
+      6. Set each story's initial project status:
+         - Regular stories → `eng:lead:plan` (story-mgmt will decompose into tasks)
          - Documentation stories (with `kind/docs` label) → `eng:cw:write`
-      6. Add a comment to the epic listing all created story numbers using the add-comment operation.
-      7. Set the epic's project status to `eng:lead:monitor` via the status-workflow skill.
-      8. Return control to the orchestrator.
+      7. Add a comment to the epic listing all created story numbers using the add-comment operation.
+      8. Set the epic's project status to `eng:lead:monitor` via the status-workflow skill.
+      9. Return control to the orchestrator.
+
+      **For Stories:**
+
+      4. Read the task catalog README at `team/specs/<project>/<epic#>-<epic-slug>/tasks/<issue#>-<story-slug>/README.md`
+         (or `team/specs/<project>/tasks/<issue#>-<story-slug>/README.md` for standalone stories).
+         Parse the task list from the catalog table.
+      5. Check for externalization mode labels on the story issue:
+         - `tasks:off` → skip externalization (tasks stay as files only). Go to step 8.
+         - `tasks:inline` → add a structured task catalog section to the story issue body. Go to step 8.
+         - No label (default) → create GitHub issues for each task. Continue to step 6.
+      6. For each `.code-task-NN.md` file listed in the catalog:
+         a. Read the task file to extract the title and objective.
+         b. Create a Task-type sub-issue of the parent Story using the sub-issue operation.
+         c. Add the `agent-internal` label to the created task issue.
+      7. Add a comment to the story listing all created task issue numbers (or noting the externalization mode) using the add-comment operation.
+      8. Set the story's project status to `eng:dev:implement` via the status-workflow skill.
+      9. Return control to the orchestrator.
 
       ### Backpressure
 
-      Before transitioning to `eng:lead:monitor`, verify:
+      Before transitioning, verify:
+
+      **For Epics:**
       - Each story has acceptance criteria
-      - Each story is a Task-type sub-issue of the parent Epic
+      - Each story is a sub-issue of the parent Epic
       - Each story has the correct initial project status set
       - The epic comment lists all created story numbers
+
+      **For Stories:**
+      - Each task issue (if created) has the `agent-internal` label
+      - Each task issue (if created) is a sub-issue of the parent Story
+      - The story comment lists all created task numbers (or notes the externalization mode)
 
       ### Comment Format
       Use `### 👑 lead — <ISO-timestamp>` for all comments.

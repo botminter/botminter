@@ -46,8 +46,8 @@ gh project item-add "$PROJECT_NUM" --owner "$OWNER" \
 
 ```
 ❌ ERROR: Status verification failed!
-Expected: arch:design
-Actual: po:triage
+Expected: eng:lead:plan
+Actual: human:po:triage
 The gh project item-edit command appeared to succeed but the status did not change.
 This may indicate a permissions issue or an API error.
 ```
@@ -285,7 +285,7 @@ gh api "repos/$TEAM_REPO/milestones" --jq '.[].title'
 To debug script execution, run with bash trace:
 
 ```bash
-bash -x scripts/status-transition.sh --issue 123 --to "arch:design"
+bash -x scripts/status-transition.sh --issue 123 --to "eng:lead:plan"
 ```
 
 This shows every command executed and variable expansion.

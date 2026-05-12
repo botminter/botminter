@@ -15,7 +15,7 @@ Quick reference for `ralph tools task` and `ralph tools memory` commands used du
 | **Runtime tasks** | `ralph tools task` | Track work items during runs | `.agent/tasks.jsonl` |
 | **Code tasks** | `ralph task` | Implementation planning | `tasks/*.code-task.md` |
 
-This skill covers **runtime tasks**. For code tasks, see `/code-task-generator`.
+This skill covers **runtime tasks**. For code tasks, see `/story-mgmt`.
 
 ## Task Commands
 

@@ -2,7 +2,7 @@
 
 ## What This Repo Is
 
-This is a **team repo** — the control plane for an agentic software development lifecycle team with PDD planning pipeline, adversarial review, and verification. Files are the coordination fabric. Three members coordinate through GitHub issues on this repo to track work.
+This is a **team repo** — the control plane for an agentic software development lifecycle team with epic-mgmt (PDD) planning pipeline, adversarial review, and verification. Files are the coordination fabric. Three members coordinate through GitHub issues on this repo to track work.
 
 The team repo is NOT a code repo. It defines the team's structure, process, knowledge, and work items. Code work happens in separate project repos.
 

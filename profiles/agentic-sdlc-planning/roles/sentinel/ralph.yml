@@ -52,8 +52,7 @@ hats:
       5. Evaluate test results against the defined thresholds.
       6. **If all tests pass**:
          - Merge the PR using `gh pr merge` (via github-project skill's pr-ops)
-         - Transition the issue to `done`
-         - Close the issue
+         - Transition the issue to `human:po:accept`
          - Add a comment summarizing the merge
          - Publish `snt.gate.merged`
       7. **If any test fails**:
@@ -113,7 +112,7 @@ hats:
          - Search issue bodies and comments for the PR URL or number.
          - Check if the PR title contains an issue reference (`[#<number>]`).
       4. For any orphaned PR (no linked board issue):
-         - Create a new issue at `eng:po:triage` with the PR details
+         - Create a new issue at `human:po:triage` with the PR details
          - Add the `project/<project>` label
          - Add a comment on the PR linking to the new issue
       5. Publish `snt.triage.done` when complete.

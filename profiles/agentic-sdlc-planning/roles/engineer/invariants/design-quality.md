@@ -1,16 +1,21 @@
 # Design Quality
 
 ## Rule
-Every design document produced by the architect MUST include:
+Every design document produced by the lead MUST include:
 - Overview
 - Architecture (with diagram where applicable)
 - Components and interfaces
 - Acceptance criteria (Given-When-Then format)
-- Impact on existing system
+- Testing Strategy
 - Security Considerations
+- Observability
+- Performance
+- Migration & Compatibility
+- Impact on existing system
+- Documentation Impact
 
 ## Applies To
-All `arch_designer` hat outputs.
+All `lead_plan-create` hat outputs.
 
 ## Verification
 The design document contains all required sections. Each section has

@@ -38,12 +38,10 @@ Examples:
 
 ### PR Lifecycle
 
-1. **Draft PR created** during `eng:qe:test-design` — test stubs and plan committed
-2. **PR marked ready** during `eng:dev:implement` — implementation complete
-3. **Code review** at `eng:dev:code-review` — uses `gh pr review` (approve/request-changes)
-4. **QE verification** at `eng:qe:verify` — validates against acceptance criteria
-5. **Architect sign-off** at `eng:arch:sign-off` — auto-advances to sentinel
-6. **Merge gating** at `snt:gate:merge` — sentinel runs project-specific tests, merges or rejects
+1. **PR created** during `eng:dev:implement` — implementation with TDD (red/green/refactor)
+2. **Internal code review** during `eng:dev:implement` — `dev_implement-review` hat uses `gh pr review` (approve/request-changes)
+3. **QE verification** at `eng:qe:verify` — validates against acceptance criteria
+4. **Merge gating** at `snt:gate:merge` — sentinel runs project-specific tests, merges or rejects
 
 ### Merge Gate Configuration
 
@@ -80,15 +78,14 @@ Every PR body should include:
 
 ## Review Expectations
 
-- Code review occurs at `eng:dev:code-review` via `gh pr review`
+- Code review occurs during `eng:dev:implement` via the `dev_implement-review` hat using `gh pr review`
 - Reviewer uses the review format defined in `PROCESS.md`
 - Review status must be `approved` before proceeding to QE verification
 
 ## Merge Criteria
 
-- Code review approved via `gh pr review`
+- Code review approved via `gh pr review` (during `eng:dev:implement`)
 - QE verification passed at `eng:qe:verify`
-- Architect sign-off at `eng:arch:sign-off`
 - Sentinel merge gate passed at `snt:gate:merge`
 - PR labels are correct
 - Related issues are updated with the PR reference

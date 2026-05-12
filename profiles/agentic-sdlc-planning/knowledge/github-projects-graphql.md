@@ -12,7 +12,7 @@ gh api graphql -f query="
     updateProjectV2Field(input: {
       fieldId: \"PVTSSF_lADOD6L7Gs4BSitmzhAC5bo\"
       singleSelectOptions: [
-        {name: \"bug:investigate\", color: GRAY, description: \"QE investigating bug\"}
+        {name: \"eng:qe:investigate\", color: GRAY, description: \"Engineer (QE hat) investigating bug\"}
       ]
     }) {
       projectV2Field {
@@ -34,7 +34,7 @@ gh api graphql -f query="
       "projectV2Field": {
         "name": "Status",
         "options": [
-          {"name": "bug:investigate"}
+          {"name": "eng:qe:investigate"}
         ]
       }
     }
@@ -91,9 +91,9 @@ gh api graphql -f query='
       "options": [
         {
           "id": "8760f5dd",
-          "name": "bug:investigate",
+          "name": "eng:qe:investigate",
           "color": "GRAY",
-          "description": "QE investigating bug"
+          "description": "Engineer (QE hat) investigating bug"
         }
       ]
     }
@@ -185,7 +185,8 @@ gh api graphql \
 | Team Kind | GitHub Issue Type |
 |-----------|-------------------|
 | epic | Epic |
-| story | Task |
+| story | Story |
+| task | Task |
 | bug | Bug |
 
 ---

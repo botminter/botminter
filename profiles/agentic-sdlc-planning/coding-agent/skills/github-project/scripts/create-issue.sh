@@ -1,9 +1,10 @@
 #!/bin/bash
-# Create a new issue (epic, story, or bug) with project setup
+# Create a new issue (epic, story, task, or bug) with project setup
 #
 # Uses GitHub's native issue types and sub-issues:
 #   epic  → Epic issue type
-#   story → Task issue type + parentIssueId (sub-issue of epic)
+#   story → Story issue type + parentIssueId (sub-issue of epic)
+#   task  → Task issue type (direct implementation, no decomposition)
 #   bug   → Bug issue type
 #
 # Uses GitHub native issue types and sub-issues.
@@ -65,19 +66,20 @@ if [ -z "$BODY" ]; then
 fi
 
 if [ -z "$KIND" ]; then
-  echo "❌ ERROR: --kind is required (epic, story, or bug)"
+  echo "❌ ERROR: --kind is required (epic, story, task, or bug)"
   exit 1
 fi
 
-if [ "$KIND" != "epic" ] && [ "$KIND" != "story" ] && [ "$KIND" != "bug" ]; then
-  echo "❌ ERROR: --kind must be 'epic', 'story', or 'bug'"
+if [ "$KIND" != "epic" ] && [ "$KIND" != "story" ] && [ "$KIND" != "task" ] && [ "$KIND" != "bug" ]; then
+  echo "❌ ERROR: --kind must be 'epic', 'story', 'task', or 'bug'"
   exit 1
 fi
 
 # Map kind to GitHub native issue type
 case "$KIND" in
   epic)  ISSUE_TYPE_NAME="Epic" ;;
-  story) ISSUE_TYPE_NAME="Task" ;;
+  story) ISSUE_TYPE_NAME="Story" ;;
+  task)  ISSUE_TYPE_NAME="Task" ;;
   bug)   ISSUE_TYPE_NAME="Bug" ;;
 esac
 
@@ -205,11 +207,7 @@ if [ -z "$ITEM_ID" ] || [ "$ITEM_ID" = "null" ]; then
 fi
 
 # Set initial status based on kind
-if [ "$KIND" = "bug" ]; then
-  INITIAL_STATUS="bug:investigate"
-else
-  INITIAL_STATUS="po:triage"
-fi
+INITIAL_STATUS="human:po:triage"
 
 OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="'"$INITIAL_STATUS"'") | .id')
 if [ -z "$OPTION_ID" ] || [ "$OPTION_ID" = "null" ]; then

@@ -21,7 +21,7 @@ ACTION=""
 PARENT=""
 TITLE=""
 BODY=""
-TYPE="Task"  # Default issue type
+TYPE="Story"  # Default issue type (stories are sub-issues of epics)
 
 while [[ $# -gt 0 ]]; do
   case $1 in

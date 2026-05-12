@@ -1,7 +1,7 @@
 name: agentic-sdlc-planning
 display_name: "Agentic SDLC Planning"
-description: "Agentic software lifecycle with PDD planning pipeline, adversarial review, verification, and a multi-gate status graph. Three roles: engineer (full SDLC), sentinel (merge gatekeeper), and chief-of-staff (operator's AI assistant)."
-version: "1.0.0"
+description: "Agentic software lifecycle with epic-mgmt (PDD) planning pipeline, adversarial review, verification, and a multi-gate status graph. Three roles: engineer (full SDLC), sentinel (merge gatekeeper), and chief-of-staff (operator's AI assistant)."
+version: "1.0.1"
 schema_version: '1.0'
 
 coding_agents:
@@ -39,8 +39,8 @@ roles:
     description: "PR merge gatekeeper and orphaned PR triage"
 
 labels:
-  # Issue classification uses GitHub native issue types (Epic, Task, Bug).
-  # Stories and subtasks are linked via native sub-issues.
+  # Issue classification uses GitHub native issue types (Epic, Story, Task, Bug).
+  # Parent-child relationships use native sub-issues.
   - name: "kind/docs"
     color: "0075CA"
     description: "Label modifier — routes any issue type to content writer hats"
@@ -111,6 +111,14 @@ statuses:
     description: "Engineer (QE hat) verifying implementation"
   - name: "snt:gate:merge"
     description: "Sentinel running merge gates on PR"
+
+  # Specialist statuses (content writer, SRE)
+  - name: "eng:cw:write"
+    description: "Engineer (content writer hat) drafting documentation"
+  - name: "eng:cw:review"
+    description: "Engineer (content writer hat) reviewing documentation"
+  - name: "eng:sre:setup"
+    description: "Engineer (SRE hat) setting up test infrastructure"
 
   # Bug statuses (shared: human:po:triage, done)
   - name: "eng:qe:investigate"

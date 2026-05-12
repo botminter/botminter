@@ -2,7 +2,7 @@
 
 ## Rule
 
-The agentic SDLC minimal profile uses a three-member model. The engineer self-transitions through the development lifecycle by switching hats. The sentinel handles PR merge gating. The chief of staff is the operator's AI assistant. All members coordinate through GitHub issues via the `github-project` skill.
+This profile uses a three-member model. The engineer self-transitions through the development lifecycle by switching hats. The sentinel handles PR merge gating. The chief of staff is the operator's AI assistant. All members coordinate through GitHub issues via the `github-project` skill.
 
 ## Project Status Transitions
 
@@ -19,7 +19,7 @@ The agent records work output, decisions, and questions as comments on issues:
 
 1. Add a comment using the skill's add-comment operation, following the format in `PROCESS.md`
 
-Comments use the emoji + role header of the active hat (e.g., `🏗️ architect`, `💻 dev`, `🧪 qe`) to preserve audit trail clarity, even though the engineer is a single agent.
+Comments use the emoji + role header of the active hat (e.g., `👑 lead`, `💻 dev`, `🧪 qe`) to preserve audit trail clarity, even though the engineer is a single agent.
 
 ## Escalation Paths
 
@@ -31,8 +31,7 @@ When the agent encounters a blocker or needs guidance:
 ## Human-in-the-Loop (GitHub Comments)
 
 The engineer uses supervised mode — human gates only at major decision points:
-- `human:po:design-review` — design approval
-- `human:po:plan-review` — plan approval
+- `human:po:plan-review` — planning artifacts approval (design doc + story breakdown)
 - `human:po:accept` — final acceptance
 
 ### How it works
@@ -47,7 +46,7 @@ The **human** reads the comment on GitHub, then responds via a comment:
 
 ### Detection rules
 
-The `po_reviewer` hat scans issue comments for the human's response:
+The `po_gate` hat scans issue comments for the human's response:
 - Look for comments NOT authored by the bot user (i.e., from a human)
 - Scan the **most recent** human comment after the agent's review request comment
 - If the comment contains `approved` or `lgtm` (case-insensitive) → approval

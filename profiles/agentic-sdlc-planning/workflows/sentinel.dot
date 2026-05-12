@@ -1,5 +1,5 @@
 // Sentinel workflow state machine
-// Statuses: snt:gate:merge, done
+// Statuses: snt:gate:merge, human:po:accept
 
 digraph sentinel {
     rankdir=LR;
@@ -11,15 +11,15 @@ digraph sentinel {
     node [fillcolor="#FCA5A5", color="#B91C1C", shape=hexagon];
     "snt:gate:merge" [label="snt:gate:merge\n(SENTINEL)"];
 
-    // Terminal (done)
-    node [fillcolor="#D1D5DB", color="#374151", shape=doublecircle];
-    "done";
+    // Human gate (acceptance)
+    node [fillcolor="#FDE68A", color="#92400E", shape=diamond];
+    "human:po:accept" [label="human:po:accept\n(HUMAN GATE)"];
 
     // Engineer (rejection target — lives in story workflow)
     node [fillcolor="#6EE7B7", color="#065F46", shape=box];
     "eng:dev:implement" [label="eng:dev:implement\n(story workflow)"];
 
     // --- Transitions ---
-    "snt:gate:merge" -> "done" [label="tests pass\n+ merged"];
+    "snt:gate:merge" -> "human:po:accept" [label="tests pass\n+ merged"];
     "snt:gate:merge" -> "eng:dev:implement" [label="rejected", style=dashed, color="#DC2626", fontcolor="#DC2626"];
 }

@@ -273,13 +273,13 @@ Look for:
 # Add to the status lifecycle section
 | From | To | Trigger |
 |------|-----|---------|
-| dev:code-review | done | Review approved and tests pass |
+| eng:qe:verify | done | Verification passed and tests pass |
 ```
 
 **Auto-advance causing problems**:
 ```markdown
 # Clarify when auto-advance should NOT happen
-Auto-advance from `dev:implement` to `dev:code-review` only when:
+Auto-advance from `eng:dev:implement` to `eng:qe:verify` only when:
 - All acceptance criteria are met
 - Tests pass locally
 ```

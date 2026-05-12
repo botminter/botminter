@@ -6,7 +6,7 @@ Just ask naturally:
 
 - "Show me the board"
 - "Create an epic for X"
-- "Move issue #15 to design"
+- "Move issue #15 to planning"
 - "Add a comment to #42"
 - "Create a PR for this branch"
 

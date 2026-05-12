@@ -114,7 +114,7 @@ done
 
 # Check for open cos:exec:todo issues
 # Use the github-project skill's query-issues operation:
-#   query-issues --type label --label "cos:exec:todo"
+#   query-issues --type status --status "cos:exec:todo"
 ```
 
 ### Process Summary

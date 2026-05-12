@@ -52,8 +52,9 @@ Gather these data points:
 2. **Rejection loops**: Count comments matching `"Changes requested"` or
    `"review.changes_requested"` patterns per issue — multiple rounds indicate
    friction
-3. **Error statuses**: Issues that hit `error` status (check for `status/error`
-   label or project status field)
+3. **Stalled issues**: Issues that regressed (moved backward in the workflow,
+   e.g., from `eng:qe:verify` back to `eng:dev:implement`) — detect via
+   status transition comments showing backward moves
 4. **Long-lived in-progress**: Issues that stayed in `*:in-progress` for more
    than 2x the average cycle time
 5. **Cycle time**: Time from `*:todo` to `*:done` for each issue
@@ -76,7 +77,7 @@ Identify pain points and improvement areas:
 
 - Long cycle times (above-average or outliers)
 - Repeated rejections (3+ review rounds on a single issue)
-- Issues that hit `error` status
+- Issues that regressed (backward status transitions)
 - Blocked work (long periods with no progress)
 - Missing context or unclear requirements visible in comment threads
 - Process friction (manual steps that could be automated)
@@ -160,15 +161,9 @@ After writing the retro summary:
    using the norm format from the team agreements convention. Set status to
    `active` and reference the retro ID in `refs`.
 
-2. **For `process-change`, `role-change`, `member-tuning` actions**: Create
-   `cos:exec:todo` issues on the team repo for each, referencing the retro file:
-
-   ```bash
-   gh issue create --repo "$TEAM_REPO" \
-     --title "<action title>" \
-     --body "Follow-up from retro agreements/retros/NNNN-<title>.md\n\n<description>" \
-     --label "cos:exec:todo"
-   ```
+2. **For `process-change`, `role-change`, `member-tuning` actions**: Use the
+   `github-project` skill to create a Task-type issue for each action item,
+   referencing the retro file. Set the project status to `cos:exec:todo`.
 
 3. **For `knowledge-update` actions**: Document the recommendation in the
    retro. The knowledge-manager skill or operator can pick these up.

@@ -62,14 +62,31 @@ if [ -z "$STATUS_FIELD_ID" ] || [ "$STATUS_FIELD_ID" = "null" ]; then
   exit 1
 fi
 
-# Get member identity from .botminter.yml (optional)
-if [ -f .botminter.yml ]; then
-  ROLE=$(grep '^role:' .botminter.yml | awk '{print $2}')
-  EMOJI=$(grep '^comment_emoji:' .botminter.yml | sed 's/comment_emoji: *"//' | sed 's/"$//')
-else
-  ROLE="superman"
-  EMOJI="🦸"
+# Get member identity (walk up from skill dir to find .botminter.workspace)
+_WS_ROOT=""
+_search_dir="${CLAUDE_SKILL_DIR:-$PWD}"
+while [ "$_search_dir" != "/" ]; do
+  if [ -f "$_search_dir/.botminter.workspace" ]; then
+    _WS_ROOT="$_search_dir"
+    break
+  fi
+  _search_dir=$(dirname "$_search_dir")
+done
+
+if [ -z "$_WS_ROOT" ]; then
+  echo "❌ ERROR: Could not find .botminter.workspace (searched up from ${CLAUDE_SKILL_DIR:-$PWD})"
+  exit 1
 fi
+
+_MEMBER=$(grep '^member:' "$_WS_ROOT/.botminter.workspace" | awk '{print $2}')
+_BM_YML="$_WS_ROOT/team/members/$_MEMBER/botminter.yml"
+if [ -z "$_MEMBER" ] || [ ! -f "$_BM_YML" ]; then
+  echo "❌ ERROR: Could not resolve member identity (member=$_MEMBER, expected $_BM_YML)"
+  exit 1
+fi
+
+ROLE=$(grep '^role:' "$_BM_YML" | awk '{print $2}')
+EMOJI=$(grep '^comment_emoji:' "$_BM_YML" | awk '{print $2}' | tr -d '"')
 
 echo "✓ Setup complete: $TEAM_REPO, project #$PROJECT_NUM"
 

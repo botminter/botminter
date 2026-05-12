@@ -4,7 +4,7 @@
 
 This skill creates and manages Architectural Decision Records (ADRs) with sequential `ADR-NNNN` IDs. ADRs are formal, immutable documents that capture significant architectural decisions — why a decision was made, what alternatives were considered, and what consequences follow.
 
-ADRs are referenced by the PDD skill during design (when `D-NN` decisions are made) and by the code-task-generator skill (when task decomposition surfaces architectural choices). The `D-NN` decision in a design document is the lightweight inline record; the ADR is the full formal document with context, decision rationale, and consequences.
+ADRs are referenced by the epic-mgmt skill during design (when `D-NN` decisions are made) and by the story-mgmt skill (when task decomposition surfaces architectural choices). The `D-NN` decision in a design document is the lightweight inline record; the ADR is the full formal document with context, decision rationale, and consequences.
 
 ## Parameters
 
@@ -23,8 +23,8 @@ This skill supports two runtime modes, determined by the context in which it is 
 
 | Mode | Trigger | Human Present | Behavior |
 |------|---------|---------------|----------|
-| **Interactive** | Invoked directly or from interactive PDD/code-task-generator session | Yes | Present proposed ADR for review, solicit feedback on decision framing and consequences |
-| **Auto** | Invoked from autonomous PDD or code-task-generator session | No | Generate ADR autonomously, document reasoning inline, proceed without confirmation |
+| **Interactive** | Invoked directly or from interactive PDD/story-mgmt session | Yes | Present proposed ADR for review, solicit feedback on decision framing and consequences |
+| **Auto** | Invoked from autonomous PDD or story-mgmt session | No | Generate ADR autonomously, document reasoning inline, proceed without confirmation |
 
 **Interactive mode rules:**
 - Present the proposed ADR content for user review before writing the file
@@ -59,7 +59,7 @@ Write the ADR document following the standard format.
 - You MUST use the exact format specified in the ADR Format section below
 - You MUST set the initial status to `Proposed` unless the decision has already been accepted (e.g., when generating from a finalized design document, use `Accepted`)
 - If invoked from a PDD session with a `D-NN` decision, you MUST include a reference linking back to the design document and the specific `D-NN` entry
-- If invoked from code-task-generator, you MUST include a reference to the story and task context where the decision emerged
+- If invoked from story-mgmt, you MUST include a reference to the story and task context where the decision emerged
 - You MUST document both positive and negative consequences — ADRs that list only benefits are incomplete
 
 **Constraints (interactive mode):**
@@ -87,7 +87,7 @@ Inform the caller about the generated ADR.
 **Constraints:**
 - You MUST report the ADR ID (`ADR-NNNN`), file path, and title
 - If invoked from PDD, you MUST return the ADR ID so it can be referenced in the design document alongside the `D-NN` decision
-- If invoked from code-task-generator, you MUST return the ADR ID so it can be referenced in the catalog README
+- If invoked from story-mgmt, you MUST return the ADR ID so it can be referenced in the catalog README
 
 ## ADR Format
 
@@ -157,7 +157,7 @@ ADRs are **immutable records** — they are never edited after acceptance. The l
 If `{adr_dir}` is empty or does not exist, this is the first ADR. Start numbering at `ADR-0001` and create the directory.
 
 ### Invoked Without Context
-If no `D-NN` reference or task context is available, the ADR is standalone. This is valid — not all architectural decisions originate from PDD or code-task-generator. Ensure the Context section clearly states why the decision is being recorded.
+If no `D-NN` reference or task context is available, the ADR is standalone. This is valid — not all architectural decisions originate from PDD or story-mgmt. Ensure the Context section clearly states why the decision is being recorded.
 
 ### Numbering Gaps
 ADR numbering MAY have gaps (e.g., `ADR-0001`, `ADR-0003` if `ADR-0002` was created in a different branch). Always use the next number after the highest existing ID — do not fill gaps.

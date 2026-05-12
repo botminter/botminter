@@ -17,10 +17,11 @@ Exception: `done` has no role owner.
 Classification uses GitHub's native issue types:
 
 - **Epic** — top-level work item (epic)
-- **Task** — child work item (story/subtask), linked as native sub-issue
+- **Story** — deliverable unit of work decomposed into tasks, linked as native sub-issue of an Epic
+- **Task** — direct implementation unit with no decomposition
 - **Bug** — bug requiring investigation and fix
 
-Stories are linked to epics as native sub-issues.
+Stories are linked to epics as native sub-issues. Tasks are linked to stories as native sub-issues.
 
 ## Epic Lifecycle (8 statuses)
 
@@ -42,12 +43,14 @@ human:po:accept (human gate)
 done
 ```
 
-## Story Lifecycle (7 statuses)
+## Story Lifecycle (8 statuses)
 
 ```
 eng:lead:plan
     |
 human:po:plan-review (human gate)
+    |
+eng:lead:breakdown
     |
 eng:dev:implement
     |

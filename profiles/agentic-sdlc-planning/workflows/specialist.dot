@@ -35,16 +35,17 @@ digraph specialist {
         node [fillcolor="#F9A8D4", color="#9D174D", shape=box];
         "eng:cw:write";
         "eng:cw:review";
-
-        // Terminal (done — CW)
-        node [fillcolor="#D1D5DB", color="#374151", shape=doublecircle];
-        "done (cw)" [label="done"];
     }
+
+    // Sentinel (red — merge gate, shared with story workflow)
+    node [fillcolor="#FCA5A5", color="#B91C1C", shape=hexagon];
+    "snt:gate:merge" [label="snt:gate:merge\n(SENTINEL)"];
 
     // --- SRE transitions ---
     "eng:sre:setup" -> "done (sre)" [label="complete"];
 
     // --- CW transitions ---
     "eng:cw:write" -> "eng:cw:review" [label="draft ready"];
-    "eng:cw:review" -> "done (cw)" [label="approved"];
+    "eng:cw:review" -> "snt:gate:merge" [label="approved"];
+    "eng:cw:review" -> "eng:cw:write" [label="rejected", style=dashed, color="#DC2626", fontcolor="#DC2626"];
 }

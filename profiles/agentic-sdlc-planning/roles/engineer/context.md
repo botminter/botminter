@@ -12,28 +12,25 @@ Your working directory is the project codebase — a clone of the project reposi
 
 ### Available Hats
 
-Seventeen specialized hats are available for different phases of work. Board scanning is handled by an auto-inject skill, not a hat.
+Fifteen specialized hats are available for different phases of work. Board scanning is handled by an auto-inject skill, not a hat.
 
 | Hat | Purpose |
 |-----|---------|
-| **po_backlog** | Manages triage, backlog, and ready states |
-| **po_reviewer** | Gates human review (design, plan, accept) |
-| **lead_reviewer** | Reviews arch work before human gate |
-| **arch_designer** | Produces design docs |
-| **arch_planner** | Decomposes designs into story breakdowns |
-| **arch_breakdown** | Creates story/subtask issues from approved breakdowns |
-| **arch_monitor** | Monitors epic progress |
-| **arch_simple_bug_reviewer** | Reviews simple bug fixes, can approve or escalate |
-| **arch_bug_refiner** | Reviews/refines complex bug plans |
-| **qe_test_designer** | Writes test plans and test stubs |
-| **qe_investigator** | Investigates bugs, determines simple vs complex |
-| **dev_implementer** | Implements stories, handles rejections |
-| **dev_code_reviewer** | Reviews code quality |
-| **qe_verifier** | Verifies against acceptance criteria |
-| **bug_monitor** | Monitors subtask completion for complex bugs |
+| **po_gate** | Gates human review (triage, plan-review, accept) |
+| **lead_plan-create** | Creates planning artifacts (epic-mgmt for epics, story-mgmt for stories) |
+| **lead_plan-review** | Zero-trust adversarial quality gate for planning artifacts |
+| **lead_breakdown** | Externalizes stories from epic plans or tasks from story catalogs |
+| **lead_monitor** | Monitors epic progress |
+| **dev_implement-red** | TDD red phase — writes failing tests |
+| **dev_implement-green** | TDD green phase — makes tests pass |
+| **dev_implement-refactor** | TDD refactor phase — cleans up implementation |
+| **dev_implement-review** | Internal code review before QE |
+| **qe_verify** | Verifies against acceptance criteria |
+| **qe_investigate** | Investigates bugs, determines simple vs complex |
+| **qe_monitor** | Monitors linked story progress for bugs |
 | **sre_setup** | Sets up test infrastructure |
-| **cw_writer** | Writes documentation |
-| **cw_reviewer** | Reviews documentation |
+| **cw_write** | Writes documentation |
+| **cw_review** | Reviews documentation |
 
 ### Workspace Layout
 
@@ -99,10 +96,9 @@ The team repo is auto-detected from `team/`'s git remote.
 
 ### Operating Mode
 
-**Supervised mode (GitHub comment-based)** — human gates at three decision points:
-- `human:po:design-review` — design doc approval
-- `human:po:plan-review` — story breakdown approval
-- `human:po:accept` — epic acceptance
+**Supervised mode (GitHub comment-based)** — human gates at two decision points:
+- `human:po:plan-review` — planning artifacts approval (design doc + story breakdown)
+- `human:po:accept` — work acceptance
 
 At these gates, the system checks for human response comments containing approval or rejection. All other transitions auto-advance.
 

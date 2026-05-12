@@ -1,6 +1,7 @@
-// Story workflow state machine (7 statuses)
-// Statuses: eng:lead:plan, human:po:plan-review, eng:dev:implement,
-//           eng:qe:verify, snt:gate:merge, human:po:accept, done
+// Story workflow state machine (8 statuses)
+// Statuses: eng:lead:plan, human:po:plan-review, eng:lead:breakdown,
+//           eng:dev:implement, eng:qe:verify, snt:gate:merge,
+//           human:po:accept, done
 
 digraph story {
     rankdir=LR;
@@ -11,6 +12,7 @@ digraph story {
     // Engineer Lead hat (purple)
     node [fillcolor="#C4B5FD", color="#6D28D9", shape=box];
     "eng:lead:plan";
+    "eng:lead:breakdown";
 
     // Human gates (amber, octagon = human decision)
     node [fillcolor="#FCD34D", color="#B45309", shape=octagon];
@@ -35,7 +37,8 @@ digraph story {
 
     // --- Happy path transitions ---
     "eng:lead:plan" -> "human:po:plan-review" [label="plan ready"];
-    "human:po:plan-review" -> "eng:dev:implement" [label="approved"];
+    "human:po:plan-review" -> "eng:lead:breakdown" [label="approved"];
+    "eng:lead:breakdown" -> "eng:dev:implement" [label="tasks created"];
     "eng:dev:implement" -> "eng:qe:verify" [label="implementation done"];
     "eng:qe:verify" -> "snt:gate:merge" [label="verified"];
     "snt:gate:merge" -> "human:po:accept" [label="merged"];
@@ -43,6 +46,7 @@ digraph story {
 
     // --- Rejection loops (dashed red) ---
     "human:po:plan-review" -> "eng:lead:plan" [label="rejected", style=dashed, color="#DC2626", fontcolor="#DC2626"];
+    "eng:lead:breakdown" -> "eng:lead:plan" [label="rejected", style=dashed, color="#DC2626", fontcolor="#DC2626"];
     "eng:qe:verify" -> "eng:dev:implement" [label="failed", style=dashed, color="#DC2626", fontcolor="#DC2626"];
     "snt:gate:merge" -> "eng:dev:implement" [label="rejected", style=dashed, color="#DC2626", fontcolor="#DC2626"];
     "human:po:accept" -> "eng:dev:implement" [label="rejected", style=dashed, color="#DC2626", fontcolor="#DC2626"];

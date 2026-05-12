@@ -1,19 +1,44 @@
-# Prompt-Driven Development
+---
+name: epic-mgmt
+description: >-
+  Manages the full epic planning lifecycle using Prompt-Driven Development
+  (PDD). Use for idea honing, requirements extraction, requirements planning,
+  research, architectural design, adversarial review, story breakdown, feature
+  planning, roadmap planning, and epic decomposition into stories. Also
+  triggers on "plan an epic", "design a feature", "run PDD", or /epic-mgmt.
+  Do NOT use for stories or tasks — use the story-mgmt skill instead.
+metadata:
+  author: botminter
+  version: 1.0.0
+  category: planning
+---
+
+# Epic Management (PDD)
 
 ## Overview
 
-This skill guides you through the process of transforming a rough idea into a detailed design document with an implementation plan and todo list. It follows the Prompt-Driven Development methodology to systematically refine your idea, conduct necessary research, create a comprehensive design, and develop an actionable implementation plan. The process is designed to be iterative, allowing movement between requirements clarification and research as needed.
+This skill guides you through the process of transforming a rough idea into a detailed design document with a story breakdown and todo list. It follows the Prompt-Driven Development methodology to systematically refine your idea, conduct necessary research, create a comprehensive design, and develop an actionable story breakdown. The process is designed to be iterative, allowing movement between requirements clarification and research as needed.
 
 All catalogable entities produced by this skill receive stable IDs for cross-referencing across the pipeline:
 
 | Entity | Format | Scope | Assigned By |
 |--------|--------|-------|-------------|
-| Question | `Q-NN` | Per idea-honing session | Sequential in Step 3 |
-| Requirement | `CATEGORY-NN` | Per requirements.md, restarts per category | Sequential in Step 6. Category: 3-5 uppercase chars abbreviated from heading. Number: zero-padded. |
-| Research Topic | `R-NN` | Per epic | Sequential in Step 4 |
-| Acceptance Criterion | `AC-NN` | Per design doc | Sequential in Step 7 |
-| Decision | `D-NN` | Per design doc | Sequential in Step 7 |
-| Implementation Step | `STEP-NN` | Per plan.md | Sequential in Step 8 |
+| Question | `Q-NN` | Per idea-honing session | Sequential in Step 4 |
+| Requirement | `CATEGORY-NN` | Per requirements.md, restarts per category | Sequential in Step 7. Category: 3-5 uppercase chars abbreviated from heading. Number: zero-padded. |
+| Research Topic | `R-NN` | Per epic | Sequential in Step 5 |
+| Acceptance Criterion | `AC-NN` | Per design doc | Sequential in Step 8 |
+| Decision | `D-NN` | Per design doc | Sequential in Step 8 |
+| Story | `STORY-NN` | Per plan.md | Sequential in Step 9 |
+
+## Mandatory Orientation
+
+**Constraints:**
+- You MUST read the epic issue (if one exists) and scan `team/specs/` for existing artifacts BEFORE starting any PDD step
+- If `plan.md` exists with STORY-NN entries AND story issues exist as sub-issues of the epic, you MUST NOT run the PDD pipeline — epic planning is already complete
+- If epic planning is complete, you MUST load the `story-mgmt` skill and work at story level
+- If the user explicitly asked to work on a specific story (e.g., "decompose story-04", "work on story #8"), you MUST load `story-mgmt` immediately — do NOT run PDD
+- If the epic has partial artifacts (e.g., design exists but no plan), you MUST proceed with PDD at the appropriate resumability point (Step 2 handles this)
+- If no artifacts exist, you MUST proceed with PDD from Step 1
 
 ## Parameters
 
@@ -21,7 +46,9 @@ All catalogable entities produced by this skill receive stable IDs for cross-ref
 - **project** (required): Which BotMinter project (code repository) this epic is for. Corresponds to a directory under `projects/` in the workspace
 - **epic_name** (optional): A short, descriptive name for the epic. If not provided, will be generated from the rough idea
 
-The artifact directory (`{epic_dir}`) is derived, not user-specified: `team/specs/{project}/{epic_name}/`
+The artifact directory (`{epic_dir}`) is derived, not user-specified: `team/specs/{project}/{issue#}-{epic_name}/`
+
+The `{issue#}` is the GitHub Epic issue number, created in Step 2.
 
 **Constraints for parameter acquisition:**
 - You MUST ask for all required parameters upfront in a single prompt rather than one at a time
@@ -32,7 +59,7 @@ The artifact directory (`{epic_dir}`) is derived, not user-specified: `team/spec
   - Other methods: You SHOULD be open to other ways the user might want to provide the idea
 - You MUST use appropriate tools to access content based on the input method
 - You MUST confirm successful acquisition of all parameters before proceeding
-- If epic_name is not provided, You MUST generate a short kebab-case name from the rough idea, prefixed with the current date in YYYY-MM-DD format (e.g., "2026-01-30-template-manager", "2026-01-30-auth-system")
+- If epic_name is not provided, You MUST generate a short kebab-case name from the rough idea (e.g., "template-manager", "auth-system")
 - You SHOULD save the acquired rough idea to a consistent location for use in subsequent steps
 - You MUST NOT overwrite the existing epic directory because this could destroy previous work and cause data loss
 - You MUST ask the operator for a different epic_name if the generated default directory already exists and has contents from a previous iteration
@@ -72,15 +99,15 @@ This skill supports crash recovery and resumability. At the start of each run, c
 
 | Phase | Step | Completion Signal |
 |-------|------|-------------------|
-| Planning setup | 1 | `{epic_dir}/` directory exists with `rough-idea.md` |
-| Idea-honing | 3 | `{epic_dir}/idea-honing.md` has Q-NN entries with answers |
-| Research | 4 | `{epic_dir}/research/` directory contains R-NN files |
-| Requirements | 6 | `{epic_dir}/requirements.md` exists with CATEGORY-NN entries |
-| Design | 7 | `{epic_dir}/design.md` exists with AC-NN entries |
-| Plan | 8 | `{epic_dir}/plan.md` exists with STEP-NN entries |
+| Planning setup | 2 | `{epic_dir}/` directory exists with `rough-idea.md` containing `epic_issue:` frontmatter |
+| Idea-honing | 4 | `{epic_dir}/idea-honing.md` has Q-NN entries with answers |
+| Research | 5 | `{epic_dir}/research/` directory contains R-NN files |
+| Requirements | 7 | `{epic_dir}/requirements.md` exists with CATEGORY-NN entries |
+| Design | 8 | `{epic_dir}/design.md` exists with AC-NN entries |
+| Plan | 9 | `{epic_dir}/plan.md` exists with STORY-NN entries |
 
 **Constraints:**
-- You MUST check for existing artifacts at the start of Step 1 before creating the planning structure
+- You MUST check for existing artifacts at the start of Step 2 before creating the planning structure
 - If artifacts from a previous run exist, you MUST identify the last completed phase and resume from the next phase
 - You MUST NOT overwrite existing completed artifacts — they represent committed work from a previous phase
 - You MUST inform the user (interactive) or log in the artifacts (auto) which phases are being skipped due to existing artifacts
@@ -92,35 +119,43 @@ After completing each major phase, you MUST commit the artifacts in `{epic_dir}/
 **Commit points:**
 | After Phase | Files to Commit | Commit Message Pattern |
 |-------------|-----------------|----------------------|
-| Idea-honing (Step 3) | `idea-honing.md` | `docs(specs): complete idea-honing for {epic_name}` |
-| Research (Step 4) | `research/*.md` | `docs(specs): complete research for {epic_name}` |
-| Requirements (Step 6) | `requirements.md` | `docs(specs): extract requirements for {epic_name}` |
-| Design (Step 7) | `design.md` | `docs(specs): create design for {epic_name}` |
-| Plan (Step 8) | `plan.md`, updated `requirements.md` (traceability) | `docs(specs): create implementation plan for {epic_name}` |
+| Idea-honing (Step 4) | `idea-honing.md` | `docs(specs): complete idea-honing for {epic_name}` |
+| Research (Step 5) | `research/*.md` | `docs(specs): complete research for {epic_name}` |
+| Requirements (Step 7) | `requirements.md` | `docs(specs): extract requirements for {epic_name}` |
+| Design (Step 8) | `design.md` | `docs(specs): create design for {epic_name}` |
+| Story breakdown (Step 9) | `plan.md`, updated `requirements.md` (traceability) | `docs(specs): create story breakdown for {epic_name}` |
 
 **Constraints:**
 - You MUST `git add` and `git commit` the phase artifacts after each phase completes
 - You MUST NOT include unrelated files in phase commits
 - Commit messages MUST follow the project's commit convention
-- On resumability detection (Step 1), committed artifacts are the source of truth for phase completion
+- On resumability detection (Step 2), committed artifacts are the source of truth for phase completion
 
 ## Adversarial Review
 
-After each major planning artifact is produced (design document, implementation plan), you MUST spawn 3 adversarial reviewer sub-agents in parallel using the coding agent's sub-agent capability. Each reviewer examines the artifact from a distinct perspective tailored to the artifact type. The reviewers are internal to this skill — they are not separate hats.
+After each major planning artifact is produced (design document, story breakdown), you MUST spawn adversarial reviewer sub-agents in parallel using the coding agent's sub-agent capability. Each reviewer adopts a distinct professional persona and reviews the artifact holistically from that viewpoint — they apply their full professional judgment, not a narrow topic checklist. The reviewers are internal to this skill — they are not separate hats.
 
-**Perspectives by artifact type:**
+**Design Document personas (3 reviewers):**
 
-| Artifact | Perspective 1 | Perspective 2 | Perspective 3 |
-|----------|--------------|--------------|--------------|
-| **Design Document** (`design.md`) | **Architecture** — Is the design sound? Separation of concerns? Scalability? Does it handle the requirements? | **Security** — Vulnerabilities? Input validation? Auth boundaries? Data exposure? | **Maintainability** — Complexity? Coupling? Will this be understandable in 6 months? Extension points? |
-| **Implementation Plan** (`plan.md`) | **Scope** — Are steps appropriately sized? Any step too large to be demoable? Any step too trivial? | **Dependency Correctness** — Are step dependencies right? Missing prerequisites? Orphaned steps? Can this actually be built in this order? | **Risk** — What could go wrong at each step? Blast radius? Rollback strategy? Integration risks? |
+| Persona | Review lens |
+|---------|-------------|
+| **Staff Engineer** | Reviews as a senior IC who will own the technical quality of this system long-term. Applies holistic judgment across architecture, security, maintainability, performance, and production-readiness. Connects decisions to their downstream implications — a design choice that's architecturally clean but operationally fragile gets flagged as one issue, not missed because it falls between two isolated topic reviews. |
+| **UX Engineer** | Acts as the voice of every user persona who will interact with this feature — end users, operators, admins. Evaluates whether users can find it, learn it, use it, and recover from mistakes. Catches documentation gaps (missing sections, thin content, incomplete guides), poor error messages, CLI ergonomics issues, onboarding friction, and discoverability problems. The test: "when this ships, will users succeed without hand-holding?" |
+| **QE Engineer** | Reviews as the engineer who will verify this feature works end-to-end. Evaluates whether the design is testable, acceptance criteria are verifiable in Given-When-Then form, edge cases are covered, the test strategy catches regressions, and observability supports debugging failures. Catches untestable requirements, missing test categories, and gaps between ACs and actual verification. |
+
+**Story Breakdown personas (2 reviewers):**
+
+| Persona | Review lens |
+|---------|-------------|
+| **Staff Engineer** | Reviews as a tech lead who will guide engineers through this implementation. Evaluates whether stories are right-sized for a single PR, dependencies are correctly ordered, technical risks are identified with mitigations, the build sequence avoids orphaned code, and each story compiles and integrates with previous work. |
+| **Delivery/PM** | Reviews as someone accountable for delivering this feature with visible progress. Evaluates whether each story delivers demoable value, the ordering enables early stakeholder feedback, scope is controlled (no gold-plating), stories don't bunch all risk at the end, and the breakdown supports predictable velocity. |
 
 **Review feedback format:**
 
 Each reviewer MUST produce structured feedback in this format:
 
 ````markdown
-### Review: [Perspective Name]
+### Review: [Persona]
 
 **Verdict:** PASS | REVISE | BLOCK
 
@@ -134,18 +169,21 @@ Each reviewer MUST produce structured feedback in this format:
 **Strengths:** [what's done well — retained across revisions]
 ````
 
+**Overlap guidance:** Persona-based reviewers may flag the same concern from different angles. This is expected and is a signal of severity — if both the Staff Engineer and QE flag weak acceptance criteria, that issue is more important than one flagged by a single reviewer. In auto mode, overlapping issues are addressed once (not duplicated); in interactive mode, all feedback is presented and the human decides.
+
 **Iteration protocol:**
 
 | Mode | Behavior |
 |------|----------|
-| **Interactive** | Present consolidated feedback from all 3 reviewers to the human. The human selectively addresses issues (e.g., "fix #1 and #3, skip #2"). Revise only the items the human chooses to address. The human decides when the artifact is ready. |
+| **Interactive** | Present consolidated feedback from all reviewers to the human. The human selectively addresses issues (e.g., "fix #1 and #3, skip #2"). Revise only the items the human chooses to address. The human decides when the artifact is ready. |
 | **Auto** | Iterate up to 3 rounds without human input. Round 1: initial review — all issues surfaced. Round 2: targeted revision — address only blocker and major issues, re-review changed sections plus regression check. Round 3: final pass — if blockers remain, emit rejection event with remaining issues listed. |
 
 **Constraints:**
-- You MUST spawn exactly 3 reviewer sub-agents in parallel for each reviewed artifact
-- Each sub-agent MUST use a distinct perspective from the perspective table above, matched to the artifact type being reviewed
+- You MUST spawn the number of reviewer sub-agents matching the artifact type (3 for design document, 2 for story breakdown)
+- Each sub-agent MUST adopt a distinct persona from the persona tables above, matched to the artifact type being reviewed
+- Persona-based reviewers review holistically — do NOT constrain them to a narrow topic checklist. The persona description defines their lens, not their scope.
 - Sub-agents MUST produce feedback in the structured format specified above
-- You MUST NOT skip the adversarial review for any artifact listed in the perspective table
+- You MUST NOT skip the adversarial review for any artifact listed in the persona tables
 - In interactive mode: you MUST present all reviewer feedback before asking the human which issues to address
 - In interactive mode: you MUST NOT auto-dismiss any reviewer feedback — only the human decides what to address or dismiss
 - In auto mode: you MUST NOT exceed 3 review-revision rounds
@@ -156,7 +194,7 @@ Each reviewer MUST produce structured feedback in this format:
 
 ## Steps
 
-### 0. Project Selection
+### 1. Project Selection
 
 Determine which BotMinter project (code repository) this epic belongs to.
 
@@ -165,39 +203,41 @@ Determine which BotMinter project (code repository) this epic belongs to.
 - If only one project exists, auto-select it and inform the operator: "Auto-selected project `<name>` (only project in workspace)"
 - If multiple projects exist, present the list and ask the operator which project this epic is for
 - You MUST confirm the selected project before proceeding
-- You MUST store the selected project name for use in constructing `{epic_dir}` = `team/specs/{project}/{epic_name}/`
+- You MUST store the selected project name for use in constructing `{epic_dir}` = `team/specs/{project}/{issue#}-{epic_name}/`
 
 **Constraints (auto mode):**
 - You MUST derive the project from the issue's `project/<name>` label, or from context in the epic body
 - If only one project exists in `projects/`, auto-select it
 - If the project cannot be determined, you MUST log the ambiguity and halt with an actionable error
 
-### 1. Create Planning Structure
+### 2. Create Planning Structure
 
 Set up a directory structure to organize all planning artifacts created during the process.
 
 **Constraints:**
 - You MUST first check if `{epic_dir}/` already exists with artifacts from a previous run (see Resumability section)
 - If existing artifacts are found, you MUST identify the last completed phase and skip to the next incomplete phase:
-  - If `plan.md` exists with STEP-NN entries → all phases complete, proceed to Step 9
-  - If `design.md` exists with AC-NN entries → resume at Step 8 (plan)
-  - If `requirements.md` exists with CATEGORY-NN entries → resume at Step 7 (design)
-  - If `research/` contains R-NN files → resume at Step 6 (requirements)
-  - If `idea-honing.md` has Q-NN entries with answers → resume at Step 4 (research)
-  - If only `rough-idea.md` exists → resume at Step 2 (process planning)
+  - If `plan.md` exists with STORY-NN entries → all phases complete, proceed to Step 10
+  - If `design.md` exists with AC-NN entries → resume at Step 9 (plan)
+  - If `requirements.md` exists with CATEGORY-NN entries → resume at Step 8 (design)
+  - If `research/` contains R-NN files → resume at Step 7 (requirements)
+  - If `idea-honing.md` has Q-NN entries with answers → resume at Step 5 (research)
+  - If only `rough-idea.md` exists → resume at Step 3 (process planning)
 - In interactive mode: you MUST inform the user which phases are being skipped and why
 - In auto mode: you MUST log the resumability detection in the first artifact produced
-- You MUST create the epic directory if it doesn't already exist
+- You MUST ensure a GitHub Epic issue exists for this work item. If the skill was invoked with an existing issue number (e.g., from a board work item), use that issue. Otherwise, create a new Epic issue using the `github-project` skill with a title derived from the rough idea and a body containing the rough idea text. The issue's initial status MUST be set to `human:po:triage`. The issue number becomes `{issue#}` for the directory name.
+- You MUST create the epic directory `team/specs/{project}/{issue#}-{epic_name}/` if it doesn't already exist
 - You MUST create the following files:
-  - {epic_dir}/rough-idea.md (containing the provided rough idea)
+  - {epic_dir}/rough-idea.md (containing the provided rough idea, with frontmatter field `epic_issue: <number>`)
   - {epic_dir}/idea-honing.md (for requirements clarification)
 - You MUST create the following subdirectories:
   - {epic_dir}/research/ (directory for research notes)
-- In interactive mode: you MUST notify the user when the structure has been created
+- You MUST update `team/specs/index.md` with a new entry for this epic. Create the file if it doesn't exist. Each entry should include the issue number, title, project, and link to the spec directory.
+- In interactive mode: you MUST notify the user when the structure has been created and the epic issue has been filed
 - You MUST inform the user that all planning artifacts will remain available throughout the process
 - You MUST explain that this will ensure all planning artifacts remain in context throughout the process
 
-### 2. Initial Process Planning
+### 3. Initial Process Planning
 
 Determine the initial approach and sequence for requirements clarification and research.
 
@@ -212,10 +252,10 @@ Determine the initial approach and sequence for requirements clarification and r
 - You MUST NOT automatically proceed to requirements clarification or research without user confirmation because this could lead the process in a direction the user doesn't want
 
 **Constraints (auto mode):**
-- You MUST skip this step entirely — proceed directly to Step 3 (requirements clarification) as the default sequence
+- You MUST skip this step entirely — proceed directly to Step 4 (requirements clarification) as the default sequence
 - You MUST NOT prompt for user preferences
 
-### 3. Requirements Clarification
+### 4. Requirements Clarification
 
 Guide the development of a thorough specification through a series of questions. Each question receives a sequential `Q-NN` identifier for cross-referencing.
 
@@ -266,20 +306,20 @@ After completing the initial round of requirements clarification (at least 3-5 q
 
 - **Clear single objective:** The idea describes one well-defined deliverable, not a system or set of features
 - **No technology unknowns:** All technologies and patterns are established — no research phase would be needed
-- **Single-step plan:** The implementation would be a single step (one PR, one deliverable), not multiple incremental steps
+- **Single story:** The implementation would be a single story (one PR, one deliverable), not multiple incremental stories
 - **No architectural decisions:** No new patterns, no system design trade-offs, no cross-component coordination
 
 If 3 or more story-scope signals are present:
 
 | Mode | Behavior |
 |------|----------|
-| **Interactive** | Present the assessment to the user: explain which signals were detected, and ask whether to continue with full epic-level PDD or demote to story-level and switch to the code-task-generator skill instead |
-| **Auto** | Demote to story-level automatically — stop the PDD pipeline and invoke the code-task-generator skill with the work item as input. Log the scope detection rationale in the work item or artifact before demoting |
+| **Interactive** | Present the assessment to the user: explain which signals were detected, and ask whether to continue with full epic-level PDD or demote to story-level and switch to the story-mgmt skill instead |
+| **Auto** | Demote to story-level automatically — stop the PDD pipeline and invoke the story-mgmt skill with the work item as input. Log the scope detection rationale in the work item or artifact before demoting |
 
 **Scope detection constraints:**
 - You MUST NOT trigger scope detection before at least 3 questions have been asked and answered — insufficient context leads to false positives
 - You MUST list the specific signals detected when proposing a scope change
-- In interactive mode: you MUST NOT auto-demote — only the user decides whether to continue with PDD or switch to code-task-generator
+- In interactive mode: you MUST NOT auto-demote — only the user decides whether to continue with PDD or switch to story-mgmt
 - In auto mode: you MUST log the scope detection rationale in the artifact before demoting
 
 **Example idea-honing.md format (interactive mode):**
@@ -317,7 +357,7 @@ Source: codebase analysis (src/models/user.rs)
 Source: codebase analysis, team knowledge
 ````
 
-### 4. Research Relevant Information
+### 5. Research Relevant Information
 
 Conduct research on relevant technologies, libraries, or existing code that could inform the design. Each research topic receives a sequential `R-NN` identifier.
 
@@ -354,7 +394,7 @@ Conduct research on relevant technologies, libraries, or existing code that coul
 - You MUST document research decisions and topic selection rationale in the research files
 - You MUST proceed to the next step automatically when research is sufficient
 
-### 5. Iteration Checkpoint
+### 6. Iteration Checkpoint
 
 Determine if further requirements clarification or research is needed before proceeding to design.
 
@@ -370,11 +410,11 @@ Determine if further requirements clarification or research is needed before pro
 
 **Constraints (auto mode):**
 - You MUST autonomously assess whether requirements and research are sufficiently complete
-- If sufficient: proceed directly to Step 6 (extracting requirements)
-- If gaps remain: iterate — return to Step 3 or Step 4 as needed, then re-evaluate
+- If sufficient: proceed directly to Step 7 (extracting requirements)
+- If gaps remain: iterate — return to Step 4 or Step 5 as needed, then re-evaluate
 - You MUST document the assessment rationale in the next artifact produced
 
-### 6. Extract Requirements
+### 7. Extract Requirements
 
 Extract and formalize requirements from the idea-honing Q&A into a standalone `requirements.md` document with categorized, uniquely identified requirements.
 
@@ -405,7 +445,7 @@ Extract and formalize requirements from the idea-honing Q&A into a standalone `r
 
 ## Traceability Matrix
 
-| Requirement | Acceptance Criteria | Implementation Step | Status |
+| Requirement | Acceptance Criteria | Story | Status |
 |-------------|--------------------|--------------------|--------|
 | CATG-01 | — | — | Pending |
 ````
@@ -413,7 +453,7 @@ Extract and formalize requirements from the idea-honing Q&A into a standalone `r
 - The **Source** column MUST reference the `Q-NN` IDs from idea-honing.md that informed the requirement
 - **Priority** MUST be one of: `must-have`, `should-have`, `could-have`, `wont-have`
 - Requirement text MUST use RFC 2119 keywords (MUST, SHOULD, MAY) to express obligation level
-- The **Traceability Matrix** at the bottom MUST list every requirement ID. The Acceptance Criteria and Implementation Step columns are initially `—` (populated in later steps when the design doc and plan are produced)
+- The **Traceability Matrix** at the bottom MUST list every requirement ID. The Acceptance Criteria and Story columns are initially `—` (populated in later steps when the design doc and plan are produced)
 **Constraints (interactive mode only):**
 - You MUST present the extracted requirements to the user for review
 - You MUST iterate on the requirements based on user feedback
@@ -422,10 +462,10 @@ Extract and formalize requirements from the idea-honing Q&A into a standalone `r
 
 **Constraints (auto mode only):**
 - You MUST extract and categorize all requirements autonomously
-- You MUST proceed directly to Step 7 after requirements extraction is complete
+- You MUST proceed directly to Step 8 after requirements extraction
 - You MUST NOT block or wait for human review
 
-### 7. Create Detailed Design
+### 8. Create Detailed Design
 
 Develop a comprehensive design document based on the requirements and research. The design document references requirements by their `CATEGORY-NN` IDs from requirements.md rather than duplicating requirement text.
 
@@ -443,8 +483,14 @@ Develop a comprehensive design document based on the requirements and research. 
   - Acceptance Criteria (each tagged with `AC-NN` ID — AC-01, AC-02, etc.)
   - Design Decisions (each tagged with `D-NN` ID — D-01, D-02, etc.)
   - Testing Strategy
+  - Security Considerations (threat model, auth boundaries, input validation, data exposure risks)
+  - Observability (logging, monitoring, metrics, alerting, debugging approach)
+  - Performance (latency, throughput, resource usage, scalability considerations)
+  - Migration & Compatibility (backward compatibility, data migration, rollout strategy)
+  - Impact on Existing System (what changes, what breaks, blast radius, changed signatures)
+  - Documentation Impact (user-facing docs, API docs, changelog entries needed)
   - Appendices (Technology Choices, Research Findings, Alternative Approaches)
-  - Traceability Matrix (LAST section — maps requirements to acceptance criteria and implementation steps)
+  - Traceability Matrix (LAST section — maps requirements to acceptance criteria and stories)
 - You MUST assign each acceptance criterion a sequential `AC-NN` ID (AC-01, AC-02, ...). Acceptance criteria MUST be in Given-When-Then (GWT) format and reference the `CATEGORY-NN` requirement(s) they verify.
 - You MUST assign each design decision a sequential `D-NN` ID (D-01, D-02, ...). Each decision MUST include the chosen option, alternatives considered, and rationale.
 - The Requirements Summary section MUST reference requirements.md by CATEGORY-NN IDs and MUST NOT duplicate the full requirement text. A brief paraphrase or the requirement title is acceptable for readability, but the authoritative text lives in requirements.md.
@@ -459,7 +505,7 @@ Develop a comprehensive design document based on the requirements and research. 
 - You SHOULD highlight design decisions and their rationales, referencing research findings where applicable
 - You MUST include a Traceability Matrix as the LAST section of the design document (after Appendices)
 - The Traceability Matrix MUST list every requirement (`CATEGORY-NN`) from requirements.md, mapped to the acceptance criteria (`AC-NN`) defined in this design document that verify it
-- The **Implementation Step** column MUST initially contain `—` (populated in Step 8 after the plan is produced)
+- The **Story** column MUST initially contain `—` (populated in Step 9 after the plan is produced)
 - The **Verification Status** column MUST initially contain `Pending`
 - Every requirement ID in requirements.md MUST appear in the matrix — a missing requirement indicates a gap in the design that must be addressed before proceeding
 
@@ -468,7 +514,7 @@ Develop a comprehensive design document based on the requirements and research. 
 ````markdown
 ## Traceability Matrix
 
-| Requirement | Acceptance Criteria | Implementation Step | Verification Status |
+| Requirement | Acceptance Criteria | Story | Verification Status |
 |-------------|--------------------|--------------------|---------------------|
 | AUTH-01 | AC-01, AC-02 | — | Pending |
 | AUTH-02 | AC-03 | — | Pending |
@@ -477,8 +523,8 @@ Develop a comprehensive design document based on the requirements and research. 
 
 **Constraints (interactive mode only):**
 - You MUST review the design with the user and iterate based on feedback
-- You MUST explicitly ask the user if they are ready to proceed to implementation before moving to Step 8
-- You MUST NOT proceed to the implementation plan step without explicit user confirmation because this could skip important design refinement
+- You MUST explicitly ask the user if they are ready to proceed to implementation before moving to Step 9
+- You MUST NOT proceed to the story breakdown step without explicit user confirmation because this could skip important design refinement
 - You MUST offer to return to requirements clarification or research if gaps are identified during design
 
 **Constraints (auto mode only):**
@@ -488,11 +534,11 @@ Develop a comprehensive design document based on the requirements and research. 
 
 **Adversarial Review (design document):**
 - After producing and committing the design document, you MUST run the adversarial review process (see Adversarial Review section)
-- Use the **Design Document** perspectives: Architecture, Security, Maintainability
+- Use the **Design Document** personas: Staff Engineer, UX Engineer, QE Engineer
 - Apply the iteration protocol matching the current mode (interactive or auto)
 - If revisions are made, re-commit `{epic_dir}/design.md` with message `docs(specs): revise design after review for {epic_name}`
-- In interactive mode: complete the adversarial review before asking the user to proceed to Step 8
-- In auto mode: complete the adversarial review (up to 3 rounds) before proceeding to Step 8 — if blockers remain after 3 rounds, emit a rejection event
+- In interactive mode: complete the adversarial review before asking the user to proceed to Step 9
+- In auto mode: complete the adversarial review (up to 3 rounds) before proceeding to Step 9 — if blockers remain after 3 rounds, emit a rejection event
 
 **Example acceptance criterion format:**
 
@@ -519,24 +565,24 @@ Develop a comprehensive design document based on the requirements and research. 
 - In interactive mode: the ADR skill presents the proposed ADR to the user for review before writing
 - In auto mode: the ADR skill generates the ADR autonomously — all ADRs are committed as part of the design document commit-after-phase
 
-### 8. Develop Implementation Plan
+### 9. Develop Story Breakdown
 
-Create a structured implementation plan with a series of steps for implementing the design. Each step receives a sequential `STEP-NN` identifier.
+Create a structured story breakdown with a series of stories for implementing the design. Each story receives a sequential `STORY-NN` identifier.
 
 **Constraints (all modes):**
-- You MUST create an implementation plan at {epic_dir}/plan.md
+- You MUST create a story breakdown at {epic_dir}/plan.md
 - After completing this phase, you MUST commit `{epic_dir}/plan.md` and the updated `{epic_dir}/requirements.md` (traceability matrix) to version control (see Commit After Phase section)
-- You MUST include a checklist at the beginning of the plan.md file to track implementation progress
-- You MUST use the following specific instructions when creating the implementation plan:
+- You MUST include a checklist at the beginning of the plan.md file to track story progress
+- You MUST use the following specific instructions when creating the story breakdown:
   ```
-  Convert the design into a series of implementation steps that will build each component in a test-driven manner following agile best practices. Each step must result in a working, demoable increment of functionality. Prioritize best practices, incremental progress, and early testing, ensuring no big jumps in complexity at any stage. Make sure that each step builds on the previous steps, and ends with wiring things together. There should be no hanging or orphaned code that isn't integrated into a previous step.
+  Convert the design into a series of stories that will build each component in a test-driven manner following agile best practices. Each story must result in a working, demoable increment of functionality. Prioritize best practices, incremental progress, and early testing, ensuring no big jumps in complexity at any stage. Make sure that each story builds on the previous stories, and ends with wiring things together. There should be no hanging or orphaned code that isn't integrated into a previous story.
   ```
-- You MUST assign each step a sequential `STEP-NN` ID (STEP-01, STEP-02, etc.)
-- You MUST format the implementation plan as a numbered series of detailed steps, each prefixed with its STEP-NN ID
-- Each step in the plan MUST be written as a clear implementation objective
-- Each step MUST begin with "STEP-NN:" where NN is the zero-padded sequential number
-- You MUST write each step as a **story** — the format MUST be directly usable by the breakdown hat to create a GitHub story issue without transformation. Each step maps 1:1 to a story issue.
-- You MUST ensure each step includes:
+- You MUST assign each story a sequential `STORY-NN` ID (STORY-01, STORY-02, etc.)
+- You MUST format the story breakdown as a numbered series of detailed stories, each prefixed with its STORY-NN ID
+- Each story MUST be written as a clear implementation objective
+- Each story MUST begin with "STORY-NN:" where NN is the zero-padded sequential number
+- The format MUST be directly usable by the breakdown hat to create a GitHub story issue without transformation. Each STORY-NN maps 1:1 to a story issue.
+- You MUST ensure each story includes:
   - **Title** — a concise, issue-title-ready summary (e.g., "Add OAuth2 token refresh endpoint")
   - **Objective** — what this story delivers as a working increment
   - **Implementation Guidance** — general approach, not excessive detail (the design doc has the details)
@@ -545,34 +591,34 @@ Create a structured implementation plan with a series of steps for implementing 
   - **Demo** — explicit description of the working functionality that can be demonstrated after completing this story
   - **Requirements** — which `CATEGORY-NN` requirement(s) this story addresses
   - **Acceptance Criteria** — which `AC-NN` criterion/criteria this story satisfies
-  - **Dependencies** — which `STEP-NN` stories must be complete before this one can start (use `—` if none)
-- You MUST ensure each step results in working, demoable functionality that provides value
-- You MUST sequence steps so that core end-to-end functionality is available as early as possible
+  - **Dependencies** — which `STORY-NN` stories must be complete before this one can start (use `—` if none)
+- You MUST ensure each story results in working, demoable functionality that provides value
+- You MUST sequence stories so that core end-to-end functionality is available as early as possible
 - You MUST NOT include excessive implementation details that are already covered in the design document because this creates redundancy and potential inconsistencies
 - You MUST assume that all context documents (requirements, design, research) will be available during implementation
-- You MUST break down the implementation into a series of discrete, manageable steps
-- You MUST ensure each step builds incrementally on previous steps
-- You MUST structure each step so that tests are written before or alongside the implementation code
-- You MUST include test requirements as part of each step that introduces or modifies functionality, not as separate testing-only steps
-- You MUST NOT create steps that are solely dedicated to testing or "adding tests" for functionality implemented in previous steps because this violates test-driven development principles and allows untested code to accumulate
+- You MUST break down the implementation into a series of discrete, manageable stories
+- You MUST ensure each story builds incrementally on previous stories
+- You MUST structure each story so that tests are written before or alongside the implementation code
+- You MUST include test requirements as part of each story that introduces or modifies functionality, not as separate testing-only stories
+- You MUST NOT create stories that are solely dedicated to testing or "adding tests" for functionality implemented in previous stories because this violates test-driven development principles and allows untested code to accumulate
 - You MUST ensure the plan covers all aspects of the design
-- You SHOULD sequence steps to validate core functionality early
-- You MUST ensure the checklist items correspond directly to the steps in the implementation plan, using the STEP-NN IDs
-- After the plan is finalized, you MUST update the Traceability Matrix in requirements.md: fill in the **Acceptance Criteria** column with the `AC-NN` IDs from the design doc and the **Implementation Step** column with the `STEP-NN` IDs from the plan for each requirement
-- After the plan is finalized, you MUST also update the Traceability Matrix in design.md: fill in the **Implementation Step** column with the `STEP-NN` IDs from the plan for each requirement
+- You SHOULD sequence stories to validate core functionality early
+- You MUST ensure the checklist items correspond directly to the stories in the plan, using the STORY-NN IDs
+- After the plan is finalized, you MUST update the Traceability Matrix in requirements.md: fill in the **Acceptance Criteria** column with the `AC-NN` IDs from the design doc and the **Story** column with the `STORY-NN` IDs from the plan for each requirement
+- After the plan is finalized, you MUST also update the Traceability Matrix in design.md: fill in the **Story** column with the `STORY-NN` IDs from the plan for each requirement
 
 **Constraints (auto mode only):**
-- You MUST produce the complete implementation plan autonomously without user confirmation
+- You MUST produce the complete story breakdown autonomously without user confirmation
 
-**Adversarial Review (implementation plan):**
-- After producing and committing the implementation plan, you MUST run the adversarial review process (see Adversarial Review section)
-- Use the **Implementation Plan** perspectives: Scope, Dependency Correctness, Risk
+**Adversarial Review (story breakdown):**
+- After producing and committing the story breakdown, you MUST run the adversarial review process (see Adversarial Review section)
+- Use the **Story Breakdown** personas: Staff Engineer, Delivery/PM
 - Apply the iteration protocol matching the current mode (interactive or auto)
 - If revisions are made, re-commit `{epic_dir}/plan.md` and updated `{epic_dir}/requirements.md` (traceability matrix) with message `docs(specs): revise plan after review for {epic_name}`
 - In interactive mode: complete the adversarial review before proceeding to Step 9
 - In auto mode: complete the adversarial review (up to 3 rounds) before proceeding to Step 9 — if blockers remain after 3 rounds, emit a rejection event
 
-### 9. Summarize and Present Results
+### 10. Summarize and Present Results
 
 Provide a summary of all artifacts created and next steps.
 
@@ -584,8 +630,8 @@ Provide a summary of all artifacts created and next steps.
   - Number of research topics (R-NN)
   - Number of acceptance criteria (AC-NN) in design.md
   - Number of decisions (D-NN) in design.md
-  - Number of implementation steps (STEP-NN) in plan.md
-- You MUST provide a brief overview of the design and implementation plan
+  - Number of stories (STORY-NN) in plan.md (story breakdown)
+- You MUST provide a brief overview of the design and story breakdown
 - You MUST suggest next steps for the user
 - You SHOULD highlight any areas that may need further refinement
 
@@ -596,25 +642,38 @@ Provide a summary of all artifacts created and next steps.
 - You MUST write the summary to `{epic_dir}/summary.md` without presenting it conversationally
 - You MUST provide a brief completion notice documenting the total artifact counts and any areas flagged for human review
 
+**PR and Status Transition (interactive mode only):**
+
+After presenting the summary, you MUST:
+
+1. **Open a PR** on the team repo with the spec artifacts, linked to the epic issue. The PR title should reference the epic (e.g., `[#1] Planning: Tmux agent sessions for observability`). The PR body should summarize the artifacts produced and link to them.
+2. **Move the epic issue** to `human:po:plan-review` using the `status-workflow` skill.
+3. **Inform the user** that the PR is open and the epic is in plan-review.
+
 **Skill Chaining (interactive mode only):**
 
-After presenting the summary, you MUST offer downstream actions based on the completed plan:
+After the PR is opened, you MUST offer to continue with story creation:
 
-- You MUST ask the user whether to:
-  1. **Create story issues** on the board from the plan steps (each `STEP-NN` maps 1:1 to a story issue)
-  2. **Chain into code-task-generator** for task decomposition of one or more stories
-  3. **Stop here** — the user will handle story creation and decomposition manually or via other workflows
+- Ask the user: "Would you like to proceed with creating story issues and decomposing tasks now, or stop here and review the PR first?"
+- If the user wants to **stop here**: end the skill. The user will review and merge the PR externally. The board scanner picks up the approved epic at `eng:lead:breakdown`.
+- If the user wants to **continue in this session**:
+  1. The user reviews the plan during the conversation. When they approve:
+  2. Check if the spec PR is still open. If so, confirm with the user: "The spec PR needs to be merged before breakdown. Should I merge it now?"
+  3. If confirmed, merge the PR using the `github-project` skill.
+  4. Move the epic to `eng:lead:breakdown`.
+  5. Load the `story-mgmt` skill and chain into it for each story (each `STORY-NN` maps 1:1 to a story issue).
+  6. For each story, the story-mgmt follows the same pattern: produce task files → open a PR → move the story to `human:po:plan-review`.
+  7. You MUST pass the relevant planning context (design.md path, requirements.md path, `CATEGORY-NN` and `AC-NN` IDs) when chaining into story-mgmt.
 - If the user chooses to create stories AND decompose tasks, you MUST ask about sequencing:
-  - **All stories first:** Create all story issues from plan steps, then decompose each story into tasks
+  - **All stories first:** Create all story issues from the plan, then decompose each story into tasks
   - **Story-by-story:** Create one story issue, decompose it into tasks, then move to the next story
-- You MUST pass the relevant planning context (design.md path, requirements.md path, `CATEGORY-NN` and `AC-NN` IDs) when chaining into code-task-generator
-- You MUST NOT auto-chain without explicit user confirmation
 
-**Skill Chaining (auto mode only):**
+**PR and Status Transition (auto mode only):**
 
-- You MUST NOT chain into code-task-generator or create story issues — planning is complete
-- Ralph hat transitions handle downstream work (breakdown hat creates stories, developer hats decompose and implement)
-- You MUST note in the summary that story creation and task decomposition are deferred to downstream hats
+- You MUST NOT open a PR — the specs are committed directly to the team repo
+- You MUST move the epic issue to `human:po:plan-review` using the `status-workflow` skill
+- You MUST post a summary comment on the epic issue with links to the spec artifacts
+- You MUST NOT chain into story-mgmt or create story issues — that happens at `eng:lead:breakdown` after plan approval
 
 ## Artifact Summary
 
@@ -627,7 +686,7 @@ The complete PDD pipeline produces the following artifacts:
 | `requirements.md` | {epic_dir}/ | CATEGORY-NN | Standalone requirements organized by category with traceability matrix |
 | `research/*.md` | {epic_dir}/research/ | R-NN | Research notes organized by topic |
 | `design.md` | {epic_dir}/ | AC-NN, D-NN | Design document referencing requirements by CATEGORY-NN, with traceability matrix |
-| `plan.md` | {epic_dir}/ | STEP-NN | Implementation steps, each referencing CATEGORY-NN and AC-NN |
+| `plan.md` | {epic_dir}/ | STORY-NN | Story breakdown, each story referencing CATEGORY-NN and AC-NN |
 | `summary.md` | {epic_dir}/ | — | Summary listing all artifacts and next steps |
 
 ## Examples
@@ -658,10 +717,10 @@ I notice you have several additional search tools available. Should I incorporat
 
 # Planning Summary
 
-I've completed the transformation of your rough idea into a detailed design with an implementation plan. Here's what was created:
+I've completed the transformation of your rough idea into a detailed design with a story breakdown. Here's what was created:
 
 ## Directory Structure
-- team/specs/my-project/template-feature/
+- team/specs/my-project/15-template-feature/
   - rough-idea.md (your initial concept)
   - idea-honing.md (Q-01 through Q-12 — our requirements clarification)
   - requirements.md (AUTH-01 through AUTH-03, TMPL-01 through TMPL-05, SHARE-01 through SHARE-02)
@@ -670,7 +729,7 @@ I've completed the transformation of your rough idea into a detailed design with
     - R-02-storage-options.md
     - R-03-external-solutions.md
   - design.md (AC-01 through AC-08, D-01 through D-03)
-  - plan.md (STEP-01 through STEP-12, includes implementation checklist)
+  - plan.md (STORY-01 through STORY-12, story breakdown with checklist)
   - summary.md (this document)
 
 ## Key Design Elements
@@ -681,14 +740,14 @@ I've completed the transformation of your rough idea into a detailed design with
 - Document generation engine
 
 ## Implementation Approach
-The implementation plan breaks down the work into 12 incremental steps (STEP-01 through STEP-12), starting with core data models and building up to the complete feature set. Each step references the requirements (CATEGORY-NN) and acceptance criteria (AC-NN) it addresses.
+The story breakdown contains 12 stories (STORY-01 through STORY-12), starting with core data models and building up to the complete feature set. Each story references the requirements (CATEGORY-NN) and acceptance criteria (AC-NN) it addresses.
 
 ## Next Steps
-1. Review the detailed design document at team/specs/my-project/template-feature/design.md
-2. Check the implementation plan and checklist at team/specs/my-project/template-feature/plan.md
-3. Begin implementation following the checklist in the implementation plan
+1. Review the detailed design document at team/specs/my-project/15-template-feature/design.md
+2. Check the story breakdown and checklist at team/specs/my-project/15-template-feature/plan.md
+3. Begin implementation following the checklist in the story breakdown
 
-Would you like me to explain any specific part of the design or implementation plan in more detail?
+Would you like me to explain any specific part of the design or story breakdown in more detail?
 ```
 
 ## Troubleshooting
