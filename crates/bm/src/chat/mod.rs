@@ -247,6 +247,28 @@ pub fn build_meta_prompt(params: &MetaPromptParams) -> String {
     out
 }
 
+/// Injects GitHub App credentials into the current process environment.
+///
+/// Returns `true` if credentials were found and injected, `false` otherwise.
+pub fn inject_app_credentials(ws_path: &Path) -> bool {
+    let gh_dir = ws_path.join(".config/gh");
+    let hosts_yml = gh_dir.join("hosts.yml");
+
+    if hosts_yml.exists() {
+        std::env::set_var("GH_CONFIG_DIR", &gh_dir);
+        std::env::remove_var("GH_TOKEN");
+        std::env::remove_var("GITHUB_TOKEN");
+        eprintln!("Using GitHub App identity (GH_CONFIG_DIR: {})", gh_dir.display());
+        true
+    } else if gh_dir.is_dir() {
+        eprintln!("Warning: App credential directory found but hosts.yml is missing. Using personal GitHub auth.");
+        false
+    } else {
+        eprintln!("No App credentials found. Using personal GitHub auth. Run 'bm start' first to provision App credentials.");
+        false
+    }
+}
+
 /// Launches a chat session by writing the meta-prompt to a temp file,
 /// resolving the coding agent, and exec-ing through the formation.
 ///
@@ -263,6 +285,8 @@ pub fn launch_session(
 ) -> Result<()> {
     let manifest = crate::profile::read_team_repo_manifest(team_repo)?;
     let coding_agent = crate::profile::resolve_coding_agent(team, &manifest)?;
+
+    inject_app_credentials(&session.ws_path);
 
     let mut tmp_file = tempfile::Builder::new()
         .prefix("bm-session-")
@@ -952,5 +976,108 @@ mod tests {
                 .expect("should succeed with valid workspace");
         assert_eq!(session.meta_prompt, "You are an engineer.");
         assert_eq!(session.ws_path, ws);
+    }
+
+    // inject_app_credentials tests
+    // NOTE: These tests manipulate process-global env vars and MUST run
+    // with --test-threads=1.
+
+    #[test]
+    fn inject_app_credentials_sets_gh_config_dir_when_hosts_yml_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gh_dir = tmp.path().join(".config/gh");
+        std::fs::create_dir_all(&gh_dir).unwrap();
+        std::fs::write(gh_dir.join("hosts.yml"), "github.com:\n  oauth_token: test\n").unwrap();
+
+        std::env::remove_var("GH_CONFIG_DIR");
+
+        let result = inject_app_credentials(tmp.path());
+
+        assert!(result, "Should return true when credentials are available");
+        let config_dir =
+            std::env::var("GH_CONFIG_DIR").expect("GH_CONFIG_DIR should be set");
+        assert_eq!(
+            config_dir,
+            gh_dir.to_str().unwrap(),
+            "GH_CONFIG_DIR should point to .config/gh/"
+        );
+
+        std::env::remove_var("GH_CONFIG_DIR");
+    }
+
+    #[test]
+    fn inject_app_credentials_removes_conflicting_tokens() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gh_dir = tmp.path().join(".config/gh");
+        std::fs::create_dir_all(&gh_dir).unwrap();
+        std::fs::write(gh_dir.join("hosts.yml"), "github.com:\n  oauth_token: test\n").unwrap();
+
+        std::env::set_var("GH_TOKEN", "should-be-removed");
+        std::env::set_var("GITHUB_TOKEN", "should-be-removed");
+
+        let result = inject_app_credentials(tmp.path());
+
+        assert!(result, "Should return true when credentials are available");
+        assert!(
+            std::env::var("GH_TOKEN").is_err(),
+            "GH_TOKEN should be removed"
+        );
+        assert!(
+            std::env::var("GITHUB_TOKEN").is_err(),
+            "GITHUB_TOKEN should be removed"
+        );
+
+        std::env::remove_var("GH_CONFIG_DIR");
+        std::env::remove_var("GH_TOKEN");
+        std::env::remove_var("GITHUB_TOKEN");
+    }
+
+    #[test]
+    fn inject_app_credentials_noop_when_no_config_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        std::env::set_var("GH_TOKEN", "preserved");
+        std::env::set_var("GITHUB_TOKEN", "preserved");
+        std::env::remove_var("GH_CONFIG_DIR");
+
+        let result = inject_app_credentials(tmp.path());
+
+        assert!(!result, "Should return false when no credentials directory");
+        assert!(
+            std::env::var("GH_CONFIG_DIR").is_err(),
+            "GH_CONFIG_DIR should not be set"
+        );
+        assert_eq!(
+            std::env::var("GH_TOKEN").unwrap(),
+            "preserved",
+            "GH_TOKEN should be preserved"
+        );
+        assert_eq!(
+            std::env::var("GITHUB_TOKEN").unwrap(),
+            "preserved",
+            "GITHUB_TOKEN should be preserved"
+        );
+
+        std::env::remove_var("GH_TOKEN");
+        std::env::remove_var("GITHUB_TOKEN");
+    }
+
+    #[test]
+    fn inject_app_credentials_noop_when_hosts_yml_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gh_dir = tmp.path().join(".config/gh");
+        std::fs::create_dir_all(&gh_dir).unwrap();
+
+        std::env::remove_var("GH_CONFIG_DIR");
+
+        let result = inject_app_credentials(tmp.path());
+
+        assert!(!result, "Should return false when hosts.yml is missing");
+        assert!(
+            std::env::var("GH_CONFIG_DIR").is_err(),
+            "GH_CONFIG_DIR should not be set when hosts.yml is missing"
+        );
+
+        std::env::remove_var("GH_CONFIG_DIR");
     }
 }
