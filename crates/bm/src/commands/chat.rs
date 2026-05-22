@@ -34,5 +34,5 @@ pub fn run(
         return Ok(());
     }
 
-    chat::launch_session(&session, team, &team_repo, None, autonomous)
+    chat::launch_session(&session, team, &team_repo, member, None, autonomous)
 }

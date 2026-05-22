@@ -249,12 +249,17 @@ pub fn build_meta_prompt(params: &MetaPromptParams) -> String {
 
 /// Injects GitHub App credentials into the current process environment.
 ///
+/// When a `hosts.yml` exists, attempts a one-shot token refresh from the
+/// keyring before setting `GH_CONFIG_DIR`. This ensures `bm chat` and
+/// `bm meetings` work even when the daemon isn't running to keep tokens fresh.
+///
 /// Returns `true` if credentials were found and injected, `false` otherwise.
-pub fn inject_app_credentials(ws_path: &Path) -> bool {
+pub fn inject_app_credentials(ws_path: &Path, team_name: &str, member_name: &str) -> bool {
     let gh_dir = ws_path.join(".config/gh");
     let hosts_yml = gh_dir.join("hosts.yml");
 
     if hosts_yml.exists() {
+        refresh_token_from_keyring(ws_path, team_name, member_name);
         std::env::set_var("GH_CONFIG_DIR", &gh_dir);
         std::env::remove_var("GH_TOKEN");
         std::env::remove_var("GITHUB_TOKEN");
@@ -269,6 +274,70 @@ pub fn inject_app_credentials(ws_path: &Path) -> bool {
     }
 }
 
+/// One-shot token refresh: reads App credentials from the keyring, generates
+/// a fresh JWT, exchanges it for an installation token, and writes it to
+/// hosts.yml. Failures are logged as warnings — the caller continues with
+/// whatever token is already on disk.
+fn refresh_token_from_keyring(ws_path: &Path, team_name: &str, member_name: &str) {
+    use crate::formation::{self, CredentialDomain};
+    use crate::git::{app_auth, manifest_flow::credential_keys};
+
+    let formation = match formation::local::create_local_formation(team_name) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Warning: could not create formation for token refresh: {e}");
+            return;
+        }
+    };
+
+    let store = match formation.credential_store(CredentialDomain::GitHubApp {
+        team_name: team_name.to_string(),
+        member_name: member_name.to_string(),
+    }) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Warning: could not open credential store: {e}");
+            return;
+        }
+    };
+
+    let client_id = match store.retrieve(&credential_keys::client_id(member_name)) {
+        Ok(Some(v)) => v,
+        _ => return,
+    };
+    let private_key = match store.retrieve(&credential_keys::private_key(member_name)) {
+        Ok(Some(v)) => v,
+        _ => return,
+    };
+    let installation_id: u64 = match store.retrieve(&credential_keys::installation_id(member_name)) {
+        Ok(Some(v)) => match v.parse() {
+            Ok(id) => id,
+            Err(_) => return,
+        },
+        _ => return,
+    };
+
+    let jwt = match app_auth::generate_jwt(&client_id, &private_key) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("Warning: JWT generation failed during token refresh: {e}");
+            return;
+        }
+    };
+
+    let inst_token = match app_auth::exchange_for_installation_token(&jwt, installation_id) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Warning: token exchange failed during token refresh: {e}");
+            return;
+        }
+    };
+
+    if let Err(e) = formation.refresh_token(member_name, ws_path, &inst_token.token) {
+        eprintln!("Warning: failed to write refreshed token: {e}");
+    }
+}
+
 /// Launches a chat session by writing the meta-prompt to a temp file,
 /// resolving the coding agent, and exec-ing through the formation.
 ///
@@ -280,13 +349,14 @@ pub fn launch_session(
     session: &AgentSession,
     team: &crate::config::TeamEntry,
     team_repo: &Path,
+    member_name: &str,
     initial_prompt: Option<&str>,
     autonomous: bool,
 ) -> Result<()> {
     let manifest = crate::profile::read_team_repo_manifest(team_repo)?;
     let coding_agent = crate::profile::resolve_coding_agent(team, &manifest)?;
 
-    inject_app_credentials(&session.ws_path);
+    inject_app_credentials(&session.ws_path, &team.name, member_name);
 
     let mut tmp_file = tempfile::Builder::new()
         .prefix("bm-session-")
@@ -991,7 +1061,7 @@ mod tests {
 
         std::env::remove_var("GH_CONFIG_DIR");
 
-        let result = inject_app_credentials(tmp.path());
+        let result = inject_app_credentials(tmp.path(), "test-team", "test-member");
 
         assert!(result, "Should return true when credentials are available");
         let config_dir =
@@ -1015,7 +1085,7 @@ mod tests {
         std::env::set_var("GH_TOKEN", "should-be-removed");
         std::env::set_var("GITHUB_TOKEN", "should-be-removed");
 
-        let result = inject_app_credentials(tmp.path());
+        let result = inject_app_credentials(tmp.path(), "test-team", "test-member");
 
         assert!(result, "Should return true when credentials are available");
         assert!(
@@ -1040,7 +1110,7 @@ mod tests {
         std::env::set_var("GITHUB_TOKEN", "preserved");
         std::env::remove_var("GH_CONFIG_DIR");
 
-        let result = inject_app_credentials(tmp.path());
+        let result = inject_app_credentials(tmp.path(), "test-team", "test-member");
 
         assert!(!result, "Should return false when no credentials directory");
         assert!(
@@ -1070,7 +1140,7 @@ mod tests {
 
         std::env::remove_var("GH_CONFIG_DIR");
 
-        let result = inject_app_credentials(tmp.path());
+        let result = inject_app_credentials(tmp.path(), "test-team", "test-member");
 
         assert!(!result, "Should return false when hosts.yml is missing");
         assert!(

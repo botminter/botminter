@@ -66,7 +66,7 @@ pub fn run_meeting(meeting: &Meeting, matches: &clap::ArgMatches) -> Result<()> 
         &meeting.instructions,
     )?;
 
-    chat::launch_session(&session, team, &team_repo, initial_prompt.as_deref(), autonomous)
+    chat::launch_session(&session, team, &team_repo, &member, initial_prompt.as_deref(), autonomous)
 }
 
 /// Handle `External(Vec<OsString>)` — unknown subcommands.
