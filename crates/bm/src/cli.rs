@@ -2,9 +2,13 @@ use std::ffi::OsString;
 
 use clap::{Parser, Subcommand};
 
+fn build_version() -> &'static str {
+    concat!(env!("CARGO_PKG_VERSION"), env!("BM_VERSION_META"))
+}
+
 /// botminter — lead your own Claude Code agents
 #[derive(Parser)]
-#[command(name = "bm", version, about, next_display_order = None)]
+#[command(name = "bm", version = build_version(), about, next_display_order = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,

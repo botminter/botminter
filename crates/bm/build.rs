@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 /// Profiles to include in release builds (comma-separated).
 const SHIPPED_PROFILES: &str = "agentic-sdlc-minimal";
@@ -29,6 +30,56 @@ fn main() {
         profiles_dir.display()
     );
     println!("cargo:rerun-if-changed=../../profiles");
+
+    emit_git_version(&manifest_dir);
+}
+
+fn emit_git_version(manifest_dir: &Path) {
+    let repo_root = manifest_dir.join("../..");
+
+    let short_hash = Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .current_dir(&repo_root)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+    let Some(hash) = short_hash else {
+        println!("cargo:rustc-env=BM_VERSION_META=");
+        return;
+    };
+
+    let is_release_tag = Command::new("git")
+        .args(["describe", "--tags", "--exact-match", "HEAD"])
+        .current_dir(&repo_root)
+        .output()
+        .is_ok_and(|o| {
+            o.status.success()
+                && String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .starts_with('v')
+        });
+
+    if is_release_tag {
+        println!("cargo:rustc-env=BM_VERSION_META=");
+    } else {
+        let dirty = Command::new("git")
+            .args(["diff", "--quiet", "HEAD"])
+            .current_dir(&repo_root)
+            .output()
+            .is_ok_and(|o| !o.status.success());
+
+        let suffix = if dirty {
+            format!(" ({hash}-dirty)")
+        } else {
+            format!(" ({hash})")
+        };
+        println!("cargo:rustc-env=BM_VERSION_META={suffix}");
+    }
+
+    println!("cargo:rerun-if-changed=../../.git/HEAD");
+    println!("cargo:rerun-if-changed=../../.git/refs");
 }
 
 /// Copies only shipped profiles to the staging directory, then strips
