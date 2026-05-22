@@ -190,6 +190,7 @@ Issues, milestones, and PRs live on the team repo's GitHub. Status transitions u
 | `docs/` | MkDocs documentation site (`docs/content/` has the markdown, `docs/mkdocs.yml` is the config) |
 | `profiles/scrum/` | Scrum profile (PROCESS.md, member skeletons, knowledge, invariants) |
 | `profiles/agentic-sdlc-minimal/` | Minimal agentic SDLC profile (engineer, chief-of-staff, sentinel roles) |
+| `profiles/agentic-sdlc-planning/` | Planning-focused agentic SDLC profile (lead-centric workflow with adversarial review) |
 | `crates/bm/tests/e2e/` | E2E tests against real GitHub (init, sync, bridge lifecycle) |
 | `invariants/` | Constitutional constraints — hard requirements, not suggestions |
 | `.planning/adrs/` | Architecture Decision Records (MADR 4.0.0 format) |
@@ -225,7 +226,7 @@ Issues, milestones, and PRs live on the team repo's GitHub. Status transitions u
 - When embedding a codeblock inside a markdown codeblock, the outer block needs more backticks than the inner block.
 - **Invariants are constitutional.** All files in `invariants/` are hard constraints that MUST be satisfied — they are not suggestions. Read them before making changes and review compliance after implementation. Violations are treated as bugs.
 - **CLI idempotency:** All state-mutating commands (`init`, `teams sync`, `bridge identity add`, `bridge room create`) MUST be idempotent. Running the same command twice must produce the same end state without errors. Check for existing state before creating (e.g., `gh repo view` before `gh repo create`). See `invariants/cli-idempotency.md`.
-- **E2E test coverage per profile variation:** Each meaningful profile × bridge combination needs a happy path e2e test in `crates/bm/tests/e2e/`. The happy path must exercise the full operator journey (init → hire → configure → sync → verify). Integration tests cover variations and edge cases. Current variations: agentic-sdlc-minimal (no bridge), agentic-sdlc-minimal + telegram, scrum (no bridge), scrum + telegram.
+- **E2E test coverage per profile variation:** Each meaningful profile × bridge combination needs a happy path e2e test in `crates/bm/tests/e2e/`. The happy path must exercise the full operator journey (init → hire → configure → sync → verify). Integration tests cover variations and edge cases. Current variations: agentic-sdlc-minimal (no bridge), agentic-sdlc-minimal + telegram, agentic-sdlc-planning (no bridge), agentic-sdlc-planning + tuwunel, scrum (no bridge), scrum + telegram.
 - **User-scenario TDD:** When adding features, write the e2e test first (what the user should experience), then fix code to make it green. Plans that decompose into implementation tasks without user-journey tests will miss display/integration gaps that only show up in UAT.
 - **Keyring prerequisites (Linux):** The `keyring` crate requires a Secret Service provider with an initialized collection. On desktop Linux this happens via PAM; on headless/su/SSH access it may not. Error messages must distinguish "no daemon" from "daemon running but collection missing." See `.planning/debug/keyring-report.md` and `.planning/todos/pending/2026-03-09-improve-local-formation-keyring-ux.md`.
 
