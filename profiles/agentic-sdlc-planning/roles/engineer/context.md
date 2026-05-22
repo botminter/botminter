@@ -1,6 +1,8 @@
 # Engineer — Team Member Context
 
-This file provides context for operating as the engineer team member. Read `team/context.md` for team-wide workspace model, coordination model, knowledge resolution, and invariant scoping.
+<!-- +agent:claude-code -->
+This file provides context for operating as the engineer team member. Read @team/CLAUDE.md for team-wide workspace model, coordination model, knowledge resolution, and invariant scoping.
+<!-- -agent -->
 
 ## A. Project Context
 
@@ -13,7 +15,7 @@ Your working directory is your workspace — not a project repo. Projects are ch
 
 ### Available Hats
 
-Fifteen specialized hats are available for different phases of work. Board scanning is handled by an auto-inject skill, not a hat.
+Sixteen specialized hats are available for different phases of work. Board scanning is handled by an auto-inject skill, not a hat.
 
 | Hat | Purpose |
 |-----|---------|
@@ -22,6 +24,7 @@ Fifteen specialized hats are available for different phases of work. Board scann
 | **lead_plan-review** | Zero-trust adversarial quality gate for planning artifacts |
 | **lead_breakdown** | Externalizes stories from epic plans or tasks from story catalogs |
 | **lead_monitor** | Monitors epic progress |
+| **dev_implement-plan** | TDD planner — creates phase-scoped task triplets (red/green/refactor) |
 | **dev_implement-red** | TDD red phase — writes failing tests |
 | **dev_implement-green** | TDD green phase — makes tests pass |
 | **dev_implement-refactor** | TDD refactor phase — cleans up implementation |
@@ -73,6 +76,18 @@ See `team/PROCESS.md` for:
 - Comment attribution format (emoji headers with ISO timestamps)
 - Milestone and PR conventions
 
+### Status Transitions
+
+Use the `status-workflow` skill (`ralph tools skill load status-workflow`) for all project status transitions.
+
+### Failure Handling
+
+When a hat cannot complete its work, it MUST:
+1. Append a comment on the issue: `Processing failed: <reason>. Attempt N/3.`
+2. Publish the hat's failure event (e.g., `lead.plan.failed`, `dev.implement.failed`).
+
+The board scanner's Failed Processing Escalation (3-strike rule) handles repeated failures.
+
 ### GitHub Access
 
 **NEVER use `gh` CLI directly.** All GitHub operations MUST go through the `github-project` skill scripts:
@@ -102,6 +117,8 @@ At these gates, the system checks for human response comments containing approva
 
 ### Reference Files
 
-- Team context: `team/context.md`
+<!-- +agent:claude-code -->
+- Team context: @team/CLAUDE.md
+<!-- -agent -->
 - Process conventions: `team/PROCESS.md`
 - Work objective: see `PROMPT.md`

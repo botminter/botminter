@@ -14,7 +14,9 @@ console/.svelte-kit/
 # Secrets
 *.token
 *.pat
+# Claude Code — ignore local state, commit shared dev tools (skills)
 .claude/
+!.claude/skills/
 .envrc
 
 # Ralph orchestrator runtime artifacts

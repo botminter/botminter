@@ -63,6 +63,41 @@ Issues are GitHub issues on the **team repo** (not the project repo). The `githu
 
 Issues are created via the `github-project` skill (create-issue operation). See the skill for exact commands.
 
+### Issue Body Conventions
+
+Issue bodies MUST be self-contained — a reader should understand the scope, requirements, and acceptance criteria without navigating to spec files in the repo.
+
+**Rules:**
+- Requirement IDs and AC IDs MUST include their full text, not bare IDs (e.g., `TMUX-01: The system MUST...`, not just `TMUX-01`)
+- Sub-issue breakdowns MUST NOT appear in issue bodies — GitHub's native sub-issue UI handles this
+- Spec file references MUST be clickable GitHub links, not plain file paths
+- Issue bodies are updated at specific lifecycle points only (see below); all other lifecycle communication uses comments
+
+**Spec URL convention:**
+
+```
+https://github.com/<TEAM_REPO>/blob/main/specs/<project>/<issue#>-<slug>/<file>
+```
+
+Note: `specs/` is at the team repo root. In the workspace, files are accessed via `team/specs/...` but on GitHub the path is `specs/...` (without the `team/` prefix).
+
+**Epic body lifecycle:**
+
+| Lifecycle Point | Body Content |
+|-----------------|-------------|
+| Issue created (`human:po:triage`) | Stub: summary, motivation, `*Specs pending*` |
+| Planning done → `human:po:plan-review` | Enriched: summary, motivation, design decisions, requirements table (full text), clickable spec links |
+| Stories created (`eng:lead:breakdown`) | Requirements table updated with `#N` story issue links |
+
+**Story body lifecycle:**
+
+| Lifecycle Point | Body Content |
+|-----------------|-------------|
+| Story created from plan | Full body: objective, requirements table (full text), acceptance criteria table (full GWT), implementation guidance, demo, dependencies as `#N` links, clickable spec links |
+| Task decomposition done → `human:po:plan-review` | Task Catalog link appended |
+
+The `epic-mgmt` skill owns the epic body template. The `story-mgmt` skill owns the story body template (in its "Story Issue Body Convention" section). The `lead_breakdown` hat references `story-mgmt`'s convention when creating story issues from epic plans.
+
 ---
 
 ## Issue Types

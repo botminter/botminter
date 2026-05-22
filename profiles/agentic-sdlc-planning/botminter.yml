@@ -167,7 +167,7 @@ meetings:
       - If this is about some already tracked story, you MUST load the `story-mgmt` skill and work at the story level.
     prompt: start
   - name: verification
-    description: "Verify acceptance criteria for completed work"
+    description: "Verify acceptance criteria for committed work"
     member: engineer
     instructions: |
       - You are an engineer on this team.

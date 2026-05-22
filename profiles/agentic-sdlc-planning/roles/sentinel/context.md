@@ -1,6 +1,8 @@
 # Sentinel — Team Member Context
 
-This file provides context for operating as the sentinel team member. Read `team/context.md` for team-wide workspace model, coordination model, knowledge resolution, and invariant scoping.
+<!-- +agent:claude-code -->
+This file provides context for operating as the sentinel team member. Read @team/CLAUDE.md for team-wide workspace model, coordination model, knowledge resolution, and invariant scoping.
+<!-- -agent -->
 
 ## A. Project Context
 
@@ -82,8 +84,16 @@ The team has three roles:
 - **Chief of staff** — the operator's AI assistant, handles operational tasks and drives improvements
 - **Sentinel** (you) — handles PR merge gating and orphaned PR triage
 
+### Merge Strategy
+
+When merging PRs, prefer **rebase merge** when the branch commits are well-structured (logical groupings, clean messages, each commit builds). Fall back to **squash merge** when commits are messy (fixup commits, WIP messages, unclear boundaries).
+
+The merge strategy can also be configured per-project in `team/projects/<project>/knowledge/merge-gate.md`. If specified there, the project-level setting takes precedence.
+
 ### Reference Files
 
-- Team context: `team/context.md`
+<!-- +agent:claude-code -->
+- Team context: @team/CLAUDE.md
+<!-- -agent -->
 - Process conventions: `team/PROCESS.md`
 - Work objective: see `PROMPT.md`

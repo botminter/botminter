@@ -41,6 +41,8 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "❌ ERROR: Unknown argument: $1"
+      echo "Usage: query-issues.sh --type <label|status|milestone|assignee|single|issue-type> [--label <value>] [--status <value>] [--milestone <value>] [--assignee <value>] [--issue <number>]"
+      echo "Example: query-issues.sh --type single --issue 15"
       exit 1
       ;;
   esac
@@ -69,8 +71,8 @@ case "$QUERY_TYPE" in
       exit 1
     fi
 
-    gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json \
-      --jq ".items[] | select(.status == \"$STATUS\")"
+    project_items_json \
+      | jq --arg s "$STATUS" '.items[] | select(.status == $s)'
     ;;
 
   milestone)

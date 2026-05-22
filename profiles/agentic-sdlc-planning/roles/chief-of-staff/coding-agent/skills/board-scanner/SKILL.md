@@ -39,7 +39,29 @@ handles repo detection, project ID caching, and item retrieval internally.
 Use the results to identify each item's issue number and current status
 for dispatch. Filter for items with Status field values starting with `cos:exec:`.
 
-### 4. Log to poll-log.txt
+### 4. Reconcile (if needed)
+
+If ANY items from the board fetch have null or empty status, run the
+`github-project` skill's **status-reconcile** operation before proceeding:
+
+```bash
+bash ${CLAUDE_SKILL_DIR}/../github-project/scripts/status-reconcile.sh
+```
+
+Then re-fetch the board (repeat step 3) to get the corrected statuses.
+
+**Why this happens:** The Status field is a `ProjectV2SingleSelectField` where
+each option has an internal ID. Editing the field in the GitHub Projects UI
+(reorder, color change, add/remove option) regenerates all option IDs. Items
+referencing old IDs lose their status. The reconciliation script recovers each
+item's last status from GitHub's timeline API and re-applies it with fresh IDs.
+
+Log the event to poll-log.txt:
+```
+2026-05-17T10:15:01Z — board.scan — RECONCILE — N items had null status, reconciliation applied
+```
+
+### 5. Log to poll-log.txt
 
 Use `$(date -u +%Y-%m-%dT%H:%M:%SZ)` for all timestamps.
 
@@ -49,7 +71,7 @@ Use `$(date -u +%Y-%m-%dT%H:%M:%SZ)` for all timestamps.
 2026-03-02T10:15:01Z — board.scan — END
 ```
 
-### 5. Dispatch
+### 6. Dispatch
 
 Dispatch based on the `cos:exec:*` status found. Process one item at a time.
 

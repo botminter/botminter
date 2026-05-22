@@ -88,7 +88,14 @@ fi
 ROLE=$(grep '^role:' "$_BM_YML" | awk '{print $2}')
 EMOJI=$(grep '^comment_emoji:' "$_BM_YML" | awk '{print $2}' | tr -d '"')
 
-echo "✓ Setup complete: $TEAM_REPO, project #$PROJECT_NUM"
+echo "✓ Setup complete: $TEAM_REPO, project #$PROJECT_NUM" >&2
+
+# Fetch all project items (no hardcoded limit — queries totalCount first)
+project_items_json() {
+  local total
+  total=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json --limit 1 | jq '.totalCount')
+  gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json --limit "$total"
+}
 
 # Export variables for use in calling scripts
 export TEAM_REPO OWNER PROJECT_NUM PROJECT_ID FIELD_DATA STATUS_FIELD_ID ROLE EMOJI

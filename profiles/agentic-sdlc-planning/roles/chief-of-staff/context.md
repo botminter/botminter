@@ -1,10 +1,12 @@
 # Chief of Staff — Team Member Context
 
-This file provides context for operating as the chief of staff. Read `team/context.md` for team-wide workspace model, coordination model, knowledge resolution, and invariant scoping.
+<!-- +agent:claude-code -->
+This file provides context for operating as the chief of staff. Read @team/CLAUDE.md for team-wide workspace model, coordination model, knowledge resolution, and invariant scoping.
+<!-- -agent -->
 
 ## A. Project Context
 
-Your working directory is the team repository itself — you operate on the team repo as your default project, coordinating process improvements and team-level tasks.
+Your working directory is your workspace — not a project repo. Projects are checked out as git submodules under `projects/` as well as the team repo at `team/`.
 
 ### Operating in the `team/` Submodule
 
@@ -57,6 +59,8 @@ The team repo is auto-detected from `team/`'s git remote.
 
 ### Reference Files
 
-- Team context: `team/context.md`
+<!-- +agent:claude-code -->
+- Team context: @team/CLAUDE.md
+<!-- -agent -->
 - Process conventions: `team/PROCESS.md`
 - Work objective: see `PROMPT.md`

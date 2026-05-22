@@ -9,6 +9,7 @@ SETUP_MODE=minimal source "$SCRIPT_DIR/setup.sh"
 ISSUE_NUM=""
 TITLE=""
 BODY=""
+BODY_FILE=""
 ADD_LABELS=""
 REMOVE_LABELS=""
 
@@ -24,6 +25,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --body)
       BODY="$2"
+      shift 2
+      ;;
+    --body-file)
+      BODY_FILE="$2"
       shift 2
       ;;
     --add-label)
@@ -47,8 +52,18 @@ if [ -z "$ISSUE_NUM" ]; then
   exit 1
 fi
 
-if [ -z "$TITLE" ] && [ -z "$BODY" ] && [ -z "$ADD_LABELS" ] && [ -z "$REMOVE_LABELS" ]; then
-  echo "❌ ERROR: at least one of --title, --body, --add-label, or --remove-label is required"
+if [ -n "$BODY" ] && [ -n "$BODY_FILE" ]; then
+  echo "❌ ERROR: --body and --body-file are mutually exclusive"
+  exit 1
+fi
+
+if [ -n "$BODY_FILE" ] && [ ! -f "$BODY_FILE" ]; then
+  echo "❌ ERROR: body file not found: $BODY_FILE"
+  exit 1
+fi
+
+if [ -z "$TITLE" ] && [ -z "$BODY" ] && [ -z "$BODY_FILE" ] && [ -z "$ADD_LABELS" ] && [ -z "$REMOVE_LABELS" ]; then
+  echo "❌ ERROR: at least one of --title, --body, --body-file, --add-label, or --remove-label is required"
   exit 1
 fi
 
@@ -59,7 +74,9 @@ if [ -n "$TITLE" ]; then
   CMD+=(--title "$TITLE")
 fi
 
-if [ -n "$BODY" ]; then
+if [ -n "$BODY_FILE" ]; then
+  CMD+=(--body-file "$BODY_FILE")
+elif [ -n "$BODY" ]; then
   CMD+=(--body "$BODY")
 fi
 
@@ -71,6 +88,9 @@ for label in $REMOVE_LABELS; do
   CMD+=(--remove-label "$label")
 done
 
-"${CMD[@]}" 2>&1
+if ! "${CMD[@]}" 2>&1; then
+  echo "❌ ERROR: Failed to update issue #$ISSUE_NUM"
+  exit 1
+fi
 
 echo "✓ Updated issue #$ISSUE_NUM"

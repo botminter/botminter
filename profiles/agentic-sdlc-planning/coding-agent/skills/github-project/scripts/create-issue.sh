@@ -198,7 +198,7 @@ fi
 sleep 2
 
 # Get the item ID for the newly added issue with validation
-ITEM_ID=$(gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json 2>&1 \
+ITEM_ID=$(project_items_json 2>&1 \
   | jq -r ".items[] | select(.content.number == $ISSUE_NUM) | .id")
 
 if [ -z "$ITEM_ID" ] || [ "$ITEM_ID" = "null" ]; then
@@ -209,7 +209,7 @@ fi
 # Set initial status based on kind
 INITIAL_STATUS="human:po:triage"
 
-OPTION_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Status") | .options[] | select(.name=="'"$INITIAL_STATUS"'") | .id')
+OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg s "$INITIAL_STATUS" '.fields[] | select(.name=="Status") | .options[] | select(.name==$s) | .id')
 if [ -z "$OPTION_ID" ] || [ "$OPTION_ID" = "null" ]; then
   echo "❌ ERROR: '$INITIAL_STATUS' status option not found in project"
   exit 1

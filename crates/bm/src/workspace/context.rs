@@ -333,11 +333,13 @@ fn render_project_context(projects: &[&str]) -> String {
     if projects.is_empty() {
         s.push_str("No projects assigned yet.\n");
     } else {
+        s.push_str("<!-- +agent:claude-code -->\n");
         s.push_str("| Project | Path |\n");
         s.push_str("|---------|------|\n");
         for p in projects {
-            s.push_str(&format!("| {} | `projects/{}/` |\n", p, p));
+            s.push_str(&format!("| {} | @projects/{}/CLAUDE.md |\n", p, p));
         }
+        s.push_str("<!-- -agent -->\n");
     }
     s.push_str(PROJECT_CONTEXT_END);
     s
@@ -626,6 +628,64 @@ mod tests {
         assert!(
             result.is_ok(),
             "Should succeed even without context file or workspace marker"
+        );
+    }
+
+    #[test]
+    fn render_project_context_uses_at_paths_with_agent_tags() {
+        let result = render_project_context(&["botminter", "hypershift"]);
+        // Must contain @projects/<project>/CLAUDE.md (no backticks)
+        assert!(
+            result.contains("@projects/botminter/CLAUDE.md"),
+            "Expected @projects/botminter/CLAUDE.md, got:\n{}",
+            result,
+        );
+        assert!(
+            result.contains("@projects/hypershift/CLAUDE.md"),
+            "Expected @projects/hypershift/CLAUDE.md, got:\n{}",
+            result,
+        );
+        // Must NOT contain backtick-wrapped paths
+        assert!(
+            !result.contains("`projects/botminter/`"),
+            "Old backtick format should not appear",
+        );
+        // Must contain agent-conditional tags
+        assert!(
+            result.contains("<!-- +agent:claude-code -->"),
+            "Expected agent-conditional start tag, got:\n{}",
+            result,
+        );
+        assert!(
+            result.contains("<!-- -agent -->"),
+            "Expected agent-conditional end tag, got:\n{}",
+            result,
+        );
+    }
+
+    #[test]
+    fn render_project_context_empty_shows_no_projects_message() {
+        let result = render_project_context(&[]);
+        assert!(result.contains("No projects assigned yet."));
+    }
+
+    #[test]
+    fn render_project_knowledge_uses_backtick_paths() {
+        // Knowledge paths are NOT @-loadable — they must keep backtick format
+        let result = render_project_knowledge(&["botminter"], "engineer-bob");
+        assert!(
+            result.contains("`team/projects/botminter/knowledge/`"),
+            "Knowledge paths must use backtick format",
+        );
+    }
+
+    #[test]
+    fn render_project_invariants_uses_backtick_paths() {
+        // Invariant paths are NOT @-loadable — they must keep backtick format
+        let result = render_project_invariants(&["botminter"]);
+        assert!(
+            result.contains("`team/projects/botminter/invariants/`"),
+            "Invariant paths must use backtick format",
         );
     }
 
