@@ -95,7 +95,7 @@ dev:
 
 # Build console for production (static SPA output to console/build/)
 console-build:
-    cd {{ generator_root }}/console && npm run build
+    cd {{ generator_root }}/console && pnpm install --frozen-lockfile && pnpm run build
 
 # Alias for build (kept for backwards compatibility)
 build-full: build
