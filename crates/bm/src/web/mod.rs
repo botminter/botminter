@@ -4,6 +4,7 @@ pub mod files;
 pub mod members;
 pub mod overview;
 pub mod process;
+pub mod sessions;
 pub mod state;
 pub mod sync;
 pub mod teams;
@@ -15,6 +16,7 @@ use self::files::{list_tree, read_file, write_file};
 use self::members::{get_member, list_members};
 use self::overview::team_overview;
 use self::process::team_process;
+use self::sessions::list_sessions;
 use self::state::WebState;
 use self::sync::team_sync;
 use self::teams::list_teams;
@@ -32,6 +34,7 @@ pub fn web_router(state: WebState) -> Router {
             "/api/teams/{team}/files/{*path}",
             get(read_file).put(write_file),
         )
+        .route("/api/teams/{team}/sessions", get(list_sessions))
         .route("/api/teams/{team}/sync", post(team_sync))
         .with_state(state);
 

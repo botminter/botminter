@@ -1293,3 +1293,62 @@ fn minty_team_flag_short_and_long() {
         );
     }
 }
+
+// ── CT-154-05: bm session list and bm session finalize ──────────────
+
+#[test]
+fn session_list_subcommand_parses() {
+    let tmp = tempfile::tempdir().unwrap();
+    // bm session list (no team) must parse without clap error (exit 1 = runtime, not 2 = parse)
+    for args in [
+        vec!["session", "list"],
+        vec!["session", "list", "--json"],
+        vec!["session", "list", "-t", "myteam"],
+        vec!["session", "list", "--json", "-t", "myteam"],
+    ] {
+        let output = bm(tmp.path()).args(&args).output().unwrap();
+        let code = output.status.code().unwrap_or(-1);
+        assert_ne!(
+            code, CLAP_PARSE_ERROR_CODE,
+            "`bm {}` must not be a parse error (exit {}), stderr: {}",
+            args.join(" "),
+            code,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn session_finalize_parses_with_session_id() {
+    let tmp = tempfile::tempdir().unwrap();
+    for args in [
+        vec!["session", "finalize", "abc123"],
+        vec!["session", "finalize", "abc123", "-t", "myteam"],
+    ] {
+        let output = bm(tmp.path()).args(&args).output().unwrap();
+        let code = output.status.code().unwrap_or(-1);
+        assert_ne!(
+            code, CLAP_PARSE_ERROR_CODE,
+            "`bm {}` must not be a parse error (exit {}), stderr: {}",
+            args.join(" "),
+            code,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn status_history_flag_rejected_with_migration_message() {
+    let tmp = tempfile::tempdir().unwrap();
+    let output = bm(tmp.path()).args(["status", "--history"]).output().unwrap();
+    assert!(
+        !output.status.success(),
+        "bm status --history must exit non-zero after --history removal"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("has been removed") && stderr.contains("bm session list"),
+        "`bm status --history` must print migration message directing to 'bm session list', stderr:\n{}",
+        stderr
+    );
+}

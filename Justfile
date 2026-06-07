@@ -25,22 +25,30 @@ test: unit conformance e2e
 
 # Run E2E tests ONLY (requires TESTS_GH_TOKEN, TESTS_GH_ORG, and TESTS_APP_* env vars)
 e2e:
-    @test -n "$TESTS_GH_TOKEN" || { echo "Error: TESTS_GH_TOKEN env var must be set"; exit 1; }
-    @test -n "$TESTS_GH_ORG" || { echo "Error: TESTS_GH_ORG env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_ID" || { echo "Error: TESTS_APP_ID env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_CLIENT_ID" || { echo "Error: TESTS_APP_CLIENT_ID env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_INSTALLATION_ID" || { echo "Error: TESTS_APP_INSTALLATION_ID env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_PRIVATE_KEY_FILE" || { echo "Error: TESTS_APP_PRIVATE_KEY_FILE env var must be set"; exit 1; }
+    #!/usr/bin/env bash
+    set -euo pipefail
+    eval "$(direnv export bash 2>/dev/null)" || true
+    test -n "${TESTS_GH_TOKEN:-}" || { echo "Error: TESTS_GH_TOKEN env var must be set (hint: run 'direnv allow' in the workspace root)"; exit 1; }
+    test -n "${TESTS_GH_ORG:-}" || { echo "Error: TESTS_GH_ORG env var must be set"; exit 1; }
+    test -n "${TESTS_APP_ID:-}" || { echo "Error: TESTS_APP_ID env var must be set"; exit 1; }
+    test -n "${TESTS_APP_CLIENT_ID:-}" || { echo "Error: TESTS_APP_CLIENT_ID env var must be set"; exit 1; }
+    test -n "${TESTS_APP_INSTALLATION_ID:-}" || { echo "Error: TESTS_APP_INSTALLATION_ID env var must be set"; exit 1; }
+    test -n "${TESTS_APP_PRIVATE_KEY_FILE:-}" || { echo "Error: TESTS_APP_PRIVATE_KEY_FILE env var must be set"; exit 1; }
+    export GH_TOKEN="$TESTS_GH_TOKEN"
     cargo test -p bm --features e2e --test e2e -- --gh-token "$TESTS_GH_TOKEN" --gh-org "$TESTS_GH_ORG" --app-id "$TESTS_APP_ID" --app-client-id "$TESTS_APP_CLIENT_ID" --app-installation-id "$TESTS_APP_INSTALLATION_ID" --app-private-key-file "$TESTS_APP_PRIVATE_KEY_FILE" --test-threads=1
 
 # Step through one E2E case at a time (progressive mode). SUITE is optional (e.g., scenario_fresh_start).
 e2e-step SUITE="":
-    @test -n "$TESTS_GH_TOKEN" || { echo "Error: TESTS_GH_TOKEN env var must be set"; exit 1; }
-    @test -n "$TESTS_GH_ORG" || { echo "Error: TESTS_GH_ORG env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_ID" || { echo "Error: TESTS_APP_ID env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_CLIENT_ID" || { echo "Error: TESTS_APP_CLIENT_ID env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_INSTALLATION_ID" || { echo "Error: TESTS_APP_INSTALLATION_ID env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_PRIVATE_KEY_FILE" || { echo "Error: TESTS_APP_PRIVATE_KEY_FILE env var must be set"; exit 1; }
+    #!/usr/bin/env bash
+    set -euo pipefail
+    eval "$(direnv export bash 2>/dev/null)" || true
+    test -n "${TESTS_GH_TOKEN:-}" || { echo "Error: TESTS_GH_TOKEN env var must be set (hint: run 'direnv allow' in the workspace root)"; exit 1; }
+    test -n "${TESTS_GH_ORG:-}" || { echo "Error: TESTS_GH_ORG env var must be set"; exit 1; }
+    test -n "${TESTS_APP_ID:-}" || { echo "Error: TESTS_APP_ID env var must be set"; exit 1; }
+    test -n "${TESTS_APP_CLIENT_ID:-}" || { echo "Error: TESTS_APP_CLIENT_ID env var must be set"; exit 1; }
+    test -n "${TESTS_APP_INSTALLATION_ID:-}" || { echo "Error: TESTS_APP_INSTALLATION_ID env var must be set"; exit 1; }
+    test -n "${TESTS_APP_PRIVATE_KEY_FILE:-}" || { echo "Error: TESTS_APP_PRIVATE_KEY_FILE env var must be set"; exit 1; }
+    export GH_TOKEN="$TESTS_GH_TOKEN"
     cargo test -p bm --features e2e --test e2e -- --gh-token "$TESTS_GH_TOKEN" --gh-org "$TESTS_GH_ORG" --app-id "$TESTS_APP_ID" --app-client-id "$TESTS_APP_CLIENT_ID" --app-installation-id "$TESTS_APP_INSTALLATION_ID" --app-private-key-file "$TESTS_APP_PRIVATE_KEY_FILE" --progressive {{ SUITE }} --test-threads=1
 
 # Reset progressive E2E state (clean up repos, containers, state files). SUITE is optional.
@@ -49,12 +57,16 @@ e2e-reset SUITE="":
 
 # Run E2E tests with output visible (note: libtest-mimic does not support --nocapture, but stderr from eprintln! is always visible)
 e2e-verbose:
-    @test -n "$TESTS_GH_TOKEN" || { echo "Error: TESTS_GH_TOKEN env var must be set"; exit 1; }
-    @test -n "$TESTS_GH_ORG" || { echo "Error: TESTS_GH_ORG env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_ID" || { echo "Error: TESTS_APP_ID env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_CLIENT_ID" || { echo "Error: TESTS_APP_CLIENT_ID env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_INSTALLATION_ID" || { echo "Error: TESTS_APP_INSTALLATION_ID env var must be set"; exit 1; }
-    @test -n "$TESTS_APP_PRIVATE_KEY_FILE" || { echo "Error: TESTS_APP_PRIVATE_KEY_FILE env var must be set"; exit 1; }
+    #!/usr/bin/env bash
+    set -euo pipefail
+    eval "$(direnv export bash 2>/dev/null)" || true
+    test -n "${TESTS_GH_TOKEN:-}" || { echo "Error: TESTS_GH_TOKEN env var must be set (hint: run 'direnv allow' in the workspace root)"; exit 1; }
+    test -n "${TESTS_GH_ORG:-}" || { echo "Error: TESTS_GH_ORG env var must be set"; exit 1; }
+    test -n "${TESTS_APP_ID:-}" || { echo "Error: TESTS_APP_ID env var must be set"; exit 1; }
+    test -n "${TESTS_APP_CLIENT_ID:-}" || { echo "Error: TESTS_APP_CLIENT_ID env var must be set"; exit 1; }
+    test -n "${TESTS_APP_INSTALLATION_ID:-}" || { echo "Error: TESTS_APP_INSTALLATION_ID env var must be set"; exit 1; }
+    test -n "${TESTS_APP_PRIVATE_KEY_FILE:-}" || { echo "Error: TESTS_APP_PRIVATE_KEY_FILE env var must be set"; exit 1; }
+    export GH_TOKEN="$TESTS_GH_TOKEN"
     cargo test -p bm --features e2e --test e2e -- --gh-token "$TESTS_GH_TOKEN" --gh-org "$TESTS_GH_ORG" --app-id "$TESTS_APP_ID" --app-client-id "$TESTS_APP_CLIENT_ID" --app-installation-id "$TESTS_APP_INSTALLATION_ID" --app-private-key-file "$TESTS_APP_PRIVATE_KEY_FILE" --test-threads=1
 
 # Run exploratory tests on bm-test-user@localhost via SSH. Requires SSH access to test user, podman, gh auth.

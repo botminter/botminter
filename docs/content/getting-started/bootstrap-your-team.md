@@ -105,24 +105,18 @@ This tells BotMinter which codebase your agents will clone and work in. The URL 
 !!! tip "Tag your issues"
     When creating issues on the team repo, make sure to apply the `project/<name>` label so agents can associate the work with the right codebase.
 
-## Step 3: Provision workspaces
+## Step 3: Push the team repo
 
-Once you have members hired and projects added, provision the workspaces:
+If you hired members or added projects after `bm init` (Step 2), commit and push those changes so agents can see them:
 
 ```bash
-bm teams sync --repos
+git -C team add -A && git -C team commit -m "hire members and add projects"
+git -C team push
 ```
 
-This is where the setup becomes real. `bm teams sync` does the following for each hired member:
+If you completed all hiring and project setup during `bm init`, the team repo is already pushed — skip to [Step 4](#step-4-set-up-the-project-board).
 
-- **Pushes the team repo** to GitHub (with `--repos`) so agents can coordinate via issues
-- **Creates a workspace directory** per member × project
-- **Clones the project fork** into the workspace
-- **Adds the team repo** as a `team/` submodule inside the workspace repo
-- **Copies context files** — copies `PROMPT.md`, `CLAUDE.md`, and `ralph.yml` from the team submodule to the workspace root
-- **Assembles `.claude/agents/`** — merges agent definitions from `team/` submodule paths via symlinks
-
-If you've already pushed the team repo, you can run `bm teams sync` without `--repos`.
+Workspace provisioning happens automatically when you launch members in [Step 5](#step-5-launch) — each `bm start` creates a fresh ephemeral session with the latest committed state from the team repo. No manual synchronization is needed.
 
 ## Step 4: Set up the Project board
 
@@ -184,7 +178,7 @@ bm members show engineer-01      # Member details: role, status, knowledge files
 bm projects list                 # List configured projects with fork URLs
 ```
 
-??? note "Workspace layout after sync and launch"
+??? note "Workspace layout after launch"
     ```
     workzone/
       my-team/                                   # Team directory

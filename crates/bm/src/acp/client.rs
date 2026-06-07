@@ -197,22 +197,27 @@ impl AcpClient {
         self.event_rx.lock().await.recv().await
     }
 
-    /// Shut down the ACP client gracefully.
+    /// Shut down the ACP client.
     ///
-    /// Sends a shutdown command, waits for the connection task to finish,
-    /// then kills the child process.
+    /// Kills the child process first (which closes the transport and unblocks any
+    /// in-flight network I/O inside the connection task), then waits for the task to finish.
+    /// Sending a Shutdown command afterward is harmless but ensures a clean exit.
     pub async fn shutdown(self) -> Result<(), AcpError> {
-        // Signal shutdown
+        // Kill the child process first so the connection task's transport is torn
+        // down immediately. The task may be blocked on cx.spawn()'d prompt I/O;
+        // killing the child closes stdin/stdout and lets connect_with return fast.
+        let mut child = self.child.lock().await;
+        let _ = child.kill().await;
+        drop(child);
+
+        // Signal shutdown so the task breaks out of the command loop if it's
+        // already past the transport-wait (or if kill raced).
         let _ = self.command_tx.send(AcpCommand::Shutdown).await;
 
-        // Wait for connection task
+        // Wait for the connection task (near-instant since child is now dead).
         if let Some(task) = self.task.lock().await.take() {
             let _ = task.await;
         }
-
-        // Kill child process
-        let mut child = self.child.lock().await;
-        let _ = child.kill().await;
 
         Ok(())
     }
@@ -460,7 +465,7 @@ mod tests {
     #[test]
     fn stop_reason_serialization() {
         let reason = StopReason::EndTurn;
-        let json = serde_json::to_value(&reason).unwrap();
+        let json = serde_json::to_value(reason).unwrap();
         assert_eq!(json, "end_turn");
 
         let deserialized: StopReason = serde_json::from_value(json).unwrap();
@@ -509,7 +514,7 @@ mod tests {
     #[test]
     fn acp_config_with_env_vars() {
         let config = AcpConfig {
-            binary: "claude-code-acp-rs".into(),
+            binary: "claude-agent-acp".into(),
             cwd: "/workspace".into(),
             system_prompt: Some("Be helpful".into()),
             env_vars: vec![
@@ -518,6 +523,6 @@ mod tests {
             ],
         };
         assert_eq!(config.env_vars.len(), 2);
-        assert_eq!(config.binary, "claude-code-acp-rs");
+        assert_eq!(config.binary, "claude-agent-acp");
     }
 }

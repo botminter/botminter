@@ -329,7 +329,7 @@ mod tests {
     fn claude_project_dir_path_derivation() {
         // Verify the path transformation logic
         let path = "/home/user/.botminter/workspaces/team/member";
-        let expected = path.replace('/', "-").replace('.', "-");
+        let expected = path.replace(['/', '.'], "-");
         assert_eq!(
             expected,
             "-home-user--botminter-workspaces-team-member"

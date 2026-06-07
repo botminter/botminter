@@ -35,6 +35,12 @@ pub fn poll_github_events(
     github_repo: &str,
     poll_state: &PollState,
 ) -> Result<Vec<GitHubEvent>> {
+    tracing::debug!(
+        repo = %github_repo,
+        last_event_id = poll_state.last_event_id.as_deref().unwrap_or("none"),
+        "Polling GitHub events"
+    );
+
     let output = Command::new("gh")
         .args([
             "api",
@@ -53,6 +59,7 @@ pub fn poll_github_events(
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     if stdout.trim().is_empty() {
+        tracing::debug!("GitHub events API returned empty response");
         return Ok(Vec::new());
     }
 
@@ -60,15 +67,22 @@ pub fn poll_github_events(
         serde_json::from_str(&stdout).context("Failed to parse GitHub events response")?;
 
     // Filter to events newer than last_event_id
-    if let Some(ref last_id) = poll_state.last_event_id {
+    let result = if let Some(ref last_id) = poll_state.last_event_id {
         let new_events: Vec<GitHubEvent> = events
             .into_iter()
             .take_while(|e| &e.id != last_id)
             .collect();
-        Ok(new_events)
+        new_events
     } else {
-        Ok(events)
+        events
+    };
+
+    tracing::debug!(total = result.len(), "GitHub events fetched");
+    for event in &result {
+        tracing::trace!(id = %event.id, event_type = %event.event_type, "Event");
     }
+
+    Ok(result)
 }
 
 /// Resolves the GitHub repo (owner/name) for a team.
@@ -78,6 +92,7 @@ pub fn resolve_github_repo(team_name: &str) -> Result<String> {
     if team.github_repo.is_empty() {
         bail!("No GitHub repo configured for team '{}'", team_name);
     }
+    tracing::debug!(team = %team_name, repo = %team.github_repo, "Resolved GitHub repo");
     Ok(team.github_repo.clone())
 }
 
@@ -119,7 +134,9 @@ pub fn validate_webhook_signature(
 pub fn load_webhook_secret(team_name: &str) -> Option<String> {
     let cfg = config::load().ok()?;
     let team = config::resolve_team(&cfg, Some(team_name)).ok()?;
-    team.credentials.webhook_secret.clone()
+    let secret = team.credentials.webhook_secret.clone();
+    tracing::debug!(team = %team_name, found = secret.is_some(), "Webhook secret lookup");
+    secret
 }
 
 #[cfg(test)]

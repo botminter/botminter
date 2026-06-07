@@ -59,6 +59,9 @@ pub fn launch_ralph(
             }
             _ => {
                 cmd.env("RALPH_TELEGRAM_BOT_TOKEN", token);
+                if let Some(url) = service_url {
+                    cmd.env("RALPH_TELEGRAM_API_URL", url);
+                }
             }
         }
     }
@@ -90,6 +93,9 @@ pub struct BrainLaunchConfig<'a> {
     pub team_repo: Option<&'a std::path::Path>,
     /// When set, uses GH_CONFIG_DIR instead of GH_TOKEN (App credential path).
     pub gh_config_dir: Option<&'a std::path::Path>,
+    /// Durable member-state directory for cross-session persistence (e.g., dm-room.json).
+    /// Forwarded to brain process as BM_MEMBER_STATE_DIR.
+    pub member_state_dir: Option<&'a std::path::Path>,
 }
 
 /// Launches the brain multiplexer for a chat-first member.
@@ -155,6 +161,10 @@ pub fn launch_brain(config: &BrainLaunchConfig<'_>) -> Result<u32> {
     if let Some(repo) = config.team_repo {
         cmd.env("BM_TEAM_REPO", repo);
     }
+    // Durable member-state directory for cross-session persistence (dm-room.json, etc.)
+    if let Some(dir) = config.member_state_dir {
+        cmd.env("BM_MEMBER_STATE_DIR", dir);
+    }
 
     // Detach from current process group — redirect stderr to log file for diagnostics.
     let log_path = config.workspace.join("brain-stderr.log");
@@ -180,6 +190,7 @@ pub fn launch_brain(config: &BrainLaunchConfig<'_>) -> Result<u32> {
 
 /// Returns true if the workspace has a `brain-prompt.md` file,
 /// indicating this member should run in brain (chat-first) mode.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn is_brain_member(workspace: &std::path::Path) -> bool {
     workspace.join("brain-prompt.md").exists()
 }
@@ -187,7 +198,8 @@ pub fn is_brain_member(workspace: &std::path::Path) -> bool {
 /// Checks if a member has a credential but RObot.enabled is false in ralph.yml.
 ///
 /// Returns `true` if there is a mismatch (credential present but RObot disabled),
-/// meaning the user should run `bm teams sync` to update.
+/// meaning the workspace needs to be re-provisioned to update RObot configuration.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn check_robot_enabled_mismatch(
     ralph_yml_path: &std::path::Path,
     has_credential: bool,
@@ -232,9 +244,8 @@ mod tests {
         // The real test is that `bm start` resolves credentials per-member
         // via resolve_credential_from_store() in the member loop.
 
-        // Verify launch_ralph compiles with bridge-type-aware parameters + gh_config_dir
-        let _: fn(&std::path::Path, Option<&str>, Option<&str>, Option<&str>, Option<&std::path::Path>) -> Result<u32> =
-            launch_ralph;
+        type LaunchRalphFn = fn(&std::path::Path, Option<&str>, Option<&str>, Option<&str>, Option<&std::path::Path>) -> Result<u32>;
+        let _: LaunchRalphFn = launch_ralph;
     }
 
     #[test]

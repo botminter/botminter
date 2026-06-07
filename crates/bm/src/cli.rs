@@ -206,6 +206,20 @@ pub enum Command {
         /// Show verbose Ralph runtime details
         #[arg(short, long)]
         verbose: bool,
+
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+
+        /// Show session history (terminal sessions) instead of live sessions
+        #[arg(long)]
+        history: bool,
+    },
+
+    /// Session management commands (inspect, cleanup)
+    Session {
+        #[command(subcommand)]
+        command: SessionCommand,
     },
 
     /// Team management commands
@@ -325,6 +339,10 @@ pub enum Command {
         /// Bind address for the HTTP server
         #[arg(long, default_value = "0.0.0.0")]
         bind: String,
+
+        /// Log level filter (e.g. info, debug, warn, error, or tracing filter syntax)
+        #[arg(long, default_value = "info")]
+        log_level: String,
     },
 
     /// Internal: run the brain multiplexer event loop (not user-facing)
@@ -669,6 +687,10 @@ pub enum DaemonCommand {
         /// Bind address for the HTTP server
         #[arg(long, default_value = "0.0.0.0")]
         bind: String,
+
+        /// Log level filter (e.g. info, debug, warn, error, or tracing filter syntax)
+        #[arg(long, default_value = "info")]
+        log_level: String,
     },
 
     /// Stop the running daemon
@@ -826,6 +848,62 @@ pub enum BridgeRoomCommand {
 
     /// List rooms
     List {
+        /// Team to operate on
+        #[arg(short, long)]
+        team: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SessionCommand {
+    /// Inspect a session's details
+    Inspect {
+        /// Session ID to inspect
+        session_id: String,
+
+        /// Team to operate on
+        #[arg(short, long)]
+        team: Option<String>,
+    },
+
+    /// Clean up retained sessions
+    Cleanup {
+        /// Session ID to clean up (omit to use --all, --member, or --older-than)
+        session_id: Option<String>,
+
+        /// Clean up all retained sessions
+        #[arg(long)]
+        all: bool,
+
+        /// Clean up sessions for a specific member
+        #[arg(long)]
+        member: Option<String>,
+
+        /// Clean up sessions older than a duration (e.g. 48h, 7d, 30m)
+        #[arg(long)]
+        older_than: Option<String>,
+
+        /// Team to operate on
+        #[arg(short, long)]
+        team: Option<String>,
+    },
+
+    /// List all sessions (active and terminal) with finalization status. Replaces `bm status --history`.
+    List {
+        /// Team to operate on
+        #[arg(short, long)]
+        team: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Trigger finalization of a retained session
+    Finalize {
+        /// Session ID to finalize
+        session_id: String,
+
         /// Team to operate on
         #[arg(short, long)]
         team: Option<String>,

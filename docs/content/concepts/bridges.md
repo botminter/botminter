@@ -52,13 +52,13 @@ Local bridges:
 
 Every hired team member gets their own bot user and token on the bridge, regardless of bridge type. This enables per-agent traceability in chat channels -- you can see which agent posted which message.
 
-For external bridges, the operator creates one bot per member (e.g., one Telegram bot per agent via @BotFather). For local bridges, BotMinter creates the bot accounts automatically during `bm teams sync --bridge`. All provisioned bots are automatically invited to rooms created via `bm bridge room create` and to the default `{team}-general` room created during initial provisioning.
+For external bridges, the operator creates one bot per member (e.g., one Telegram bot per agent via @BotFather). For local bridges, BotMinter creates the bot accounts automatically during `bm bridge identity add`. All provisioned bots are automatically invited to rooms created via `bm bridge room create` and to the default `{team}-general` room created during initial provisioning.
 
 ## Credential flow
 
 Credentials follow a strict path from collection to runtime injection:
 
-1. **Collection** -- During `bm bridge identity add` (external bridges: operator provides token) or `bm teams sync --bridge` (local bridges: auto-provisioned)
+1. **Collection** -- During `bm bridge identity add` (external bridges: operator provides token; local bridges: auto-provisioned)
 2. **Config exchange** -- Bridge recipes write credentials to `$BRIDGE_CONFIG_DIR/config.json` (file-based, never stdout)
 3. **Storage** -- BotMinter stores credentials in the system keyring (local formations) via the CredentialStore trait
 4. **Injection** -- At `bm start`, credentials are resolved from the keyring and injected as environment variables to each member's Ralph process

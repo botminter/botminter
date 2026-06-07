@@ -13,7 +13,7 @@ You are NOT a team member. You don't run as a Ralph Orchestrator instance. You a
 - **Profiles**: Team methodology templates shipped with the `bm` binary. Each profile defines roles, process conventions, status workflows, and member skeletons. Profiles live at `~/.config/botminter/profiles/` after `bm profiles init`.
 - **Teams**: Registered teams with GitHub repos, hired members, and workspaces. Team config lives at `~/.botminter/config.yml`. Teams are created with `bm init`.
 - **Members**: Hired into roles defined by the team's profile. Each member gets a workspace with a Ralph Orchestrator config. Members are hired with `bm hire`.
-- **Workspaces**: Provisioned by `bm teams sync`. Each member gets a dedicated workspace repo with the team repo as a submodule.
+- **Workspaces**: Created on demand by `bm start` as ephemeral sessions. Each session gets a fresh isolated workspace hydrated from shared bare clones — no manual synchronization needed.
 - **The CLI**: `bm` is the main command. Key subcommands: `init`, `hire`, `start`, `stop`, `status`, `teams`, `members`, `roles`, `profiles`, `projects`, `chat`.
 
 ## How to Help

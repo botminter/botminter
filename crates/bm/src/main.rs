@@ -224,8 +224,9 @@ fn main() -> Result<()> {
                 port,
                 interval,
                 bind,
+                log_level,
             } => {
-                commands::daemon::start(team.as_deref(), &mode, port, interval, &bind)?;
+                commands::daemon::start(team.as_deref(), &mode, port, interval, &bind, &log_level)?;
             }
             DaemonCommand::Stop { team } => {
                 commands::daemon::stop(team.as_deref())?;
@@ -241,8 +242,9 @@ fn main() -> Result<()> {
             port,
             interval,
             bind,
+            log_level,
         } => {
-            commands::daemon::run_daemon(&team, &mode, port, interval, &bind)?;
+            commands::daemon::run_daemon(&team, &mode, port, interval, &bind, &log_level)?;
         }
 
         Command::Chat {
@@ -283,8 +285,11 @@ fn main() -> Result<()> {
         Command::Disable { member, team, now } => {
             commands::disable::run(member.as_deref(), team.as_deref(), now)?;
         }
-        Command::Status { team, verbose } => {
-            commands::status::run(team.as_deref(), verbose)?;
+        Command::Status { team, verbose, json, history } => {
+            commands::status::run(team.as_deref(), verbose, json, history)?;
+        }
+        Command::Session { command } => {
+            commands::session::run(command)?;
         }
         Command::BrainRun {
             workspace,

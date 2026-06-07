@@ -541,7 +541,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{profile}: skills.dirs should be a sequence"));
 
             let has_skill_dir = dirs.iter().any(|d| {
-                d.as_str().map_or(false, |s| {
+                d.as_str().is_some_and(|s| {
                     s.contains("chief-of-staff/coding-agent/skills")
                         || s.contains("{{member_dir}}/coding-agent/skills")
                 })
@@ -747,7 +747,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{profile}: skills.dirs should be a sequence"));
 
             let has_skill_dir = dirs.iter().any(|d| {
-                d.as_str().map_or(false, |s| {
+                d.as_str().is_some_and(|s| {
                     s.contains("chief-of-staff/coding-agent/skills")
                         || s.contains("{{member_dir}}/coding-agent/skills")
                 })
@@ -947,7 +947,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{profile}: skills.dirs should be a sequence"));
 
             let has_skill_dir = dirs.iter().any(|d| {
-                d.as_str().map_or(false, |s| {
+                d.as_str().is_some_and(|s| {
                     s.contains("chief-of-staff/coding-agent/skills")
                         || s.contains("{{member_dir}}/coding-agent/skills")
                 })

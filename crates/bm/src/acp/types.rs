@@ -3,7 +3,7 @@ use std::path::PathBuf;
 /// Configuration for spawning an ACP agent process.
 #[derive(Debug, Clone)]
 pub struct AcpConfig {
-    /// Path to the ACP agent binary (e.g., "claude-code-acp-rs").
+    /// Path to the ACP agent binary (e.g., "claude-agent-acp").
     pub binary: String,
     /// Working directory for the ACP session.
     pub cwd: PathBuf,
@@ -99,13 +99,13 @@ mod tests {
     #[test]
     fn acp_config_debug_display() {
         let config = AcpConfig {
-            binary: "claude-code-acp-rs".into(),
+            binary: "claude-agent-acp".into(),
             cwd: PathBuf::from("/workspace"),
             system_prompt: Some("You are a helpful assistant.".into()),
             env_vars: vec![("FOO".into(), "bar".into())],
         };
         let debug = format!("{config:?}");
-        assert!(debug.contains("claude-code-acp-rs"));
+        assert!(debug.contains("claude-agent-acp"));
         assert!(debug.contains("/workspace"));
     }
 

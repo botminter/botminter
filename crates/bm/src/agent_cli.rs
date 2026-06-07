@@ -25,6 +25,11 @@ pub enum AgentCommand {
         #[command(subcommand)]
         command: LoopCommand,
     },
+    /// Work-item locking via daemon
+    Lock {
+        #[command(subcommand)]
+        command: LockCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -72,6 +77,20 @@ pub enum ClaudeCommand {
 pub enum ClaudeHookCommand {
     /// PostToolUse hook — checks inbox, returns additionalContext
     PostToolUse,
+}
+
+#[derive(Subcommand)]
+pub enum LockCommand {
+    /// Acquire a work-item lock for this session
+    Acquire {
+        /// Work item ID to lock (e.g. ISSUE-42)
+        work_item_id: String,
+    },
+    /// Release a work-item lock held by this session
+    Release {
+        /// Work item ID to unlock (e.g. ISSUE-42)
+        work_item_id: String,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

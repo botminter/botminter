@@ -282,7 +282,7 @@ mod tests {
             let content = std::fs::read_to_string(skills_dir.join(skill).join("SKILL.md")).unwrap();
             assert!(content.starts_with("---\n"));
             let frontmatter_end = content[4..].find("\n---\n")
-                .expect(&format!("Skill {} should have closing frontmatter delimiter", skill));
+                .unwrap_or_else(|| panic!("Skill {} should have closing frontmatter delimiter", skill));
             let frontmatter = &content[4..4 + frontmatter_end];
             assert!(frontmatter.contains("name:"));
             assert!(frontmatter.contains("description:"));

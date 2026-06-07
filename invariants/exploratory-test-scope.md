@@ -6,9 +6,12 @@ Exploratory tests MUST only exercise user-facing CLI commands, never internal or
 
 Exploratory tests MUST only invoke commands that an operator would use in production:
 
-- `bm init`, `bm hire`, `bm start`, `bm stop`, `bm status`, `bm teams sync`, `bm members list`, `bm members show`, `bm teams show`, `bm projects add`
-- Bridge-level operations via `bm teams sync --bridge`
+- `bm init`, `bm hire`, `bm start`, `bm stop`, `bm status`, `bm members list`, `bm members show`, `bm teams show`, `bm projects add`
+- Bridge-level operations: `bm bridge start`, `bm bridge stop`, `bm bridge status`, `bm bridge identity add <member>`, `bm bridge identity list`, `bm bridge room create <name>`
+- Session management: `bm session list`, `bm session inspect`, `bm session cleanup`, `bm session finalize`
 - Infrastructure tools the operator interacts with (`curl` against bridge APIs, `gh` for GitHub verification, `podman` for container inspection)
+
+Note: `bm teams sync` and `bm teams sync --bridge` were removed from the CLI. Exploratory tests MUST NOT reference these removed commands.
 
 Exploratory tests MUST NOT directly invoke internal or hidden commands (`bm brain-run`, `bm daemon-tick`, or any command not documented in `bm --help` top-level output). Testing internal commands belongs in unit tests and integration tests.
 

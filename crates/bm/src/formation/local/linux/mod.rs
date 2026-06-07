@@ -13,15 +13,15 @@ use crate::formation::{
     self, CredentialDomain, EnvironmentStatus, EnvironmentCheck, Formation,
     KeyValueCredentialStore, MemberHandle, MemberStatus, SetupParams, StartParams, StopParams,
 };
-use crate::formation::start_members::{MemberLaunched, MemberSkipped, StartResult};
+use crate::formation::start_members::StartResult;
 use crate::formation::stop_members::{MemberStopped, StopResult};
 use crate::state;
 
 /// Linux local formation — runs members as local processes on the operator's machine.
 ///
-/// Delegates to existing free functions (`start_local_members`, `stop_local_members`,
-/// `write_local_topology`) without moving any logic. This is a thin wrapper that
-/// satisfies the `Formation` trait interface.
+/// Delegates to `stop_local_members` and `write_local_topology` for member lifecycle.
+/// Member launch is handled exclusively via the daemon sessions API — `start_members`
+/// bails immediately to enforce the ephemeral session model.
 pub struct LinuxLocalFormation {
     team_name: String,
 }
@@ -197,69 +197,10 @@ impl Formation for LinuxLocalFormation {
         Ok(())
     }
 
-    fn start_members(&self, params: &StartParams) -> Result<StartResult> {
-        // Check prerequisites before touching the daemon
-        self.check_prerequisites()?;
-
-        // Ensure daemon is running, then delegate to it via HTTP API.
-        let client = match DaemonClient::connect(&self.team_name) {
-            Ok(c) => c,
-            Err(_) => {
-                // Daemon not running — start it first
-                eprintln!("Starting daemon for team '{}'...", self.team_name);
-                let mode = if params.team.daemon.polling {
-                    "poll"
-                } else {
-                    "webhook"
-                };
-                daemon::start_daemon(
-                    &self.team_name,
-                    params.team_repo,
-                    mode,
-                    0, // OS-assigned port — avoids collisions between tests/teams
-                    params.team.daemon.interval,
-                    "127.0.0.1",
-                )?;
-                // Connect to the newly started daemon
-                DaemonClient::connect(&self.team_name)?
-            }
-        };
-
-        let req = daemon::StartMembersRequest {
-            member: params.member_filter.map(|s| s.to_string()),
-        };
-        let resp = client.start_members(&req)?;
-
-        // Map daemon response back to StartResult
-        Ok(StartResult {
-            launched: resp
-                .launched
-                .into_iter()
-                .map(|m| MemberLaunched {
-                    name: m.name,
-                    pid: m.pid,
-                    brain_mode: m.brain_mode,
-                })
-                .collect(),
-            skipped: resp
-                .skipped
-                .into_iter()
-                .map(|m| MemberSkipped {
-                    name: m.name,
-                    pid: m.pid,
-                })
-                .collect(),
-            errors: resp
-                .errors
-                .into_iter()
-                .map(|m| formation::MemberFailed {
-                    name: m.name,
-                    error: m.error,
-                })
-                .collect(),
-            stale_cleaned: vec![],
-            bridge: None,
-        })
+    fn start_members(&self, _params: &StartParams) -> Result<StartResult> {
+        // Permanent workspace member launch is eradicated — use `bm start` which
+        // routes through the daemon sessions API (POST /api/sessions/start).
+        bail!("permanent workspace member launch is removed; use the daemon sessions API")
     }
 
     fn stop_members(&self, params: &StopParams) -> Result<StopResult> {

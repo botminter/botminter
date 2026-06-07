@@ -3,13 +3,12 @@ mod client;
 mod config;
 mod event;
 mod lifecycle;
-mod log;
 mod process;
 mod run;
+pub mod sessions_api;
 
 pub use self::api::{
-    HealthResponse, MemberStatusInfo, MembersStatusResponse, StartLoopRequest,
-    StartLoopResponse, StartMembersRequest, StartMembersResponse, StopMembersRequest,
+    HealthResponse, MemberStatusInfo, MembersStatusResponse, StopMembersRequest,
     StopMembersResponse,
 };
 pub use self::client::DaemonClient;

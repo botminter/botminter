@@ -1,5 +1,6 @@
 pub(crate) mod config;
 pub(crate) mod skills;
+pub mod spawn;
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -38,6 +39,118 @@ pub struct AgentSession {
     pub meta_prompt: String,
     /// Path to the member's workspace.
     pub ws_path: std::path::PathBuf,
+    /// D-02 shared credential directory for ephemeral sessions.
+    /// `sessions_base/credentials/<member>` (no `/gh` suffix — appended internally).
+    /// `None` for legacy permanent workspace sessions (deprecated).
+    pub credential_dir: Option<std::path::PathBuf>,
+}
+
+/// Prepares a chat session from a pre-existing session workspace path.
+///
+/// Unlike [`prepare_chat_session`], this variant accepts the workspace path
+/// directly (e.g., an ephemeral session workspace returned by the daemon) and
+/// does NOT check for a `.botminter.workspace` marker.
+pub fn prepare_chat_session_from_path(
+    team_repo: &Path,
+    team_name: &str,
+    member: &str,
+    workspace_path: &Path,
+    hat: Option<&str>,
+) -> Result<AgentSession> {
+    // Verify member exists in team repo
+    let member_dir = team_repo.join("members").join(member);
+    if !member_dir.is_dir() {
+        bail!(
+            "Member '{}' not found in team '{}'. \
+             Run `bm members list` to see hired members.",
+            member, team_name
+        );
+    }
+
+    // Read ralph.yml from session workspace
+    let ralph_yml_path = workspace_path.join("ralph.yml");
+    let ralph_contents = std::fs::read_to_string(&ralph_yml_path)
+        .with_context(|| format!("Failed to read {}", ralph_yml_path.display()))?;
+    let ralph_config: RalphConfig = serde_yml::from_str(&ralph_contents)
+        .with_context(|| format!("Failed to parse {}", ralph_yml_path.display()))?;
+
+    // Read PROMPT.md from session workspace
+    let prompt_md_path = workspace_path.join("PROMPT.md");
+    let prompt_md_content = std::fs::read_to_string(&prompt_md_path)
+        .with_context(|| format!("Failed to read {}", prompt_md_path.display()))?;
+
+    // Read member info from team repo
+    let (role_name, display_name) = read_member_info(&member_dir, member)?;
+
+    // Extract hat instructions and validate --hat flag
+    let hat_instructions: BTreeMap<String, String> = ralph_config
+        .hats
+        .into_iter()
+        .filter_map(|(name, h)| h.instructions.map(|instr| (name, instr)))
+        .collect();
+
+    if let Some(hat_name) = hat {
+        if !hat_instructions.contains_key(hat_name) {
+            if hat_instructions.is_empty() {
+                bail!(
+                    "Hat '{}' not found for member '{}'. \
+                     No hats with instructions found in ralph.yml",
+                    hat_name, member
+                );
+            } else {
+                let mut available: Vec<&str> =
+                    hat_instructions.keys().map(|k| k.as_str()).collect();
+                available.sort();
+                bail!(
+                    "Hat '{}' not found for member '{}'. Available hats: {}",
+                    hat_name, member, available.join(", ")
+                );
+            }
+        }
+    }
+
+    // Load manifest for role description
+    let manifest = crate::profile::read_team_repo_manifest(team_repo)?;
+    let role_description = manifest
+        .roles
+        .iter()
+        .find(|r| r.name == role_name)
+        .map(|r| r.description.as_str())
+        .unwrap_or("");
+
+    // Scan skills in session workspace
+    let skills = if ralph_config.skills.enabled {
+        scan_skills(workspace_path, &ralph_config.skills.dirs)
+    } else {
+        Vec::new()
+    };
+
+    // Build meta-prompt
+    let params = MetaPromptParams {
+        member_name: &display_name,
+        role_name: &role_name,
+        role_description,
+        team_name,
+        guardrails: &ralph_config.core.guardrails,
+        hat_instructions: &hat_instructions,
+        prompt_md_content: &prompt_md_content,
+        reference_dir: "team/ralph-prompts/reference/",
+        hat,
+        skills: &skills,
+    };
+    let meta_prompt = build_meta_prompt(&params);
+
+    let daemon_paths = crate::daemon::DaemonPaths::new(team_name)?;
+    let credential_dir = daemon_paths
+        .sessions_base()
+        .join("credentials")
+        .join(member);
+
+    Ok(AgentSession {
+        meta_prompt,
+        ws_path: workspace_path.to_path_buf(),
+        credential_dir: Some(credential_dir),
+    })
 }
 
 /// Prepares all data for a `bm chat` session: validates the member and
@@ -143,7 +256,7 @@ pub fn prepare_chat_session(
     };
     let meta_prompt = build_meta_prompt(&params);
 
-    Ok(AgentSession { meta_prompt, ws_path })
+    Ok(AgentSession { meta_prompt, ws_path, credential_dir: None })
 }
 
 /// Builds a meta-prompt for an interactive `bm chat` session.
@@ -249,12 +362,24 @@ pub fn build_meta_prompt(params: &MetaPromptParams) -> String {
 
 /// Injects GitHub App credentials into the current process environment.
 ///
-/// When a `hosts.yml` exists, attempts a one-shot token refresh from the
-/// keyring before setting `GH_CONFIG_DIR`. This ensures `bm chat` and
-/// `bm meetings` work even when the daemon isn't running to keep tokens fresh.
+/// When `credential_dir` is provided, looks for `hosts.yml` at
+/// `<credential_dir>/gh/hosts.yml` (D-02 shared credential path) and sets
+/// `GH_CONFIG_DIR` to `<credential_dir>/gh`.
+///
+/// Falls back to the legacy workspace path `<ws_path>/.config/gh/hosts.yml`
+/// when `credential_dir` is `None` (deprecated — will be removed).
 ///
 /// Returns `true` if credentials were found and injected, `false` otherwise.
-pub fn inject_app_credentials(ws_path: &Path, team_name: &str, member_name: &str) -> bool {
+pub fn inject_app_credentials(
+    ws_path: &Path,
+    credential_dir: Option<&Path>,
+    team_name: &str,
+    member_name: &str,
+) -> bool {
+    if let Some(cred_dir) = credential_dir {
+        return inject_app_credentials_from_shared_dir(cred_dir);
+    }
+
     let gh_dir = ws_path.join(".config/gh");
     let hosts_yml = gh_dir.join("hosts.yml");
 
@@ -272,6 +397,37 @@ pub fn inject_app_credentials(ws_path: &Path, team_name: &str, member_name: &str
         eprintln!("No App credentials found. Using personal GitHub auth. Run 'bm start' first to provision App credentials.");
         false
     }
+}
+
+/// Injects GitHub App credentials from an explicit shared credential directory.
+///
+/// `credential_dir` is the member-specific credential directory; the function
+/// looks for `hosts.yml` at `<credential_dir>/gh/hosts.yml` and sets
+/// `GH_CONFIG_DIR` to `<credential_dir>/gh`.
+///
+/// Returns `true` if credentials were found and injected, `false` otherwise.
+pub(crate) fn inject_app_credentials_from_shared_dir(credential_dir: &Path) -> bool {
+    let gh_dir = credential_dir.join("gh");
+    if !gh_dir.join("hosts.yml").exists() {
+        return false;
+    }
+    std::env::set_var("GH_CONFIG_DIR", &gh_dir);
+    true
+}
+
+/// Injects App credentials for an agent launch session.
+///
+/// When `shared_credential_dir` is `Some`, uses the D-02 shared credential path.
+/// Falls back to the legacy `ws_path/.config/gh` path when `None`.
+///
+/// Returns `true` if credentials were found and injected into the process environment.
+pub(crate) fn prepare_launch_credentials(
+    ws_path: &Path,
+    shared_credential_dir: Option<&Path>,
+    team_name: &str,
+    member_name: &str,
+) -> bool {
+    inject_app_credentials(ws_path, shared_credential_dir, team_name, member_name)
 }
 
 /// One-shot token refresh: reads App credentials from the keyring, generates
@@ -338,8 +494,23 @@ fn refresh_token_from_keyring(ws_path: &Path, team_name: &str, member_name: &str
     }
 }
 
+/// Resolves and injects GitHub App credentials for a session launch.
+///
+/// Uses `session.credential_dir` (D-02 shared path) when present;
+/// falls back to the legacy workspace `.config/gh` lookup when absent.
+pub(crate) fn setup_launch_credentials(
+    session: &AgentSession,
+    team_name: &str,
+    member_name: &str,
+) -> bool {
+    prepare_launch_credentials(&session.ws_path, session.credential_dir.as_deref(), team_name, member_name)
+}
+
 /// Launches a chat session by writing the meta-prompt to a temp file,
-/// resolving the coding agent, and exec-ing through the formation.
+/// resolving the coding agent, and spawning it as a child process.
+///
+/// Returns the agent's exit code. The caller is responsible for
+/// propagating it (e.g., via `std::process::exit`).
 ///
 /// If `initial_prompt` is provided, it is piped to the coding agent's
 /// stdin as the first turn via `(echo "<prompt>"; cat) | <binary> ...`.
@@ -352,11 +523,11 @@ pub fn launch_session(
     member_name: &str,
     initial_prompt: Option<&str>,
     autonomous: bool,
-) -> Result<()> {
+) -> Result<i32> {
     let manifest = crate::profile::read_team_repo_manifest(team_repo)?;
     let coding_agent = crate::profile::resolve_coding_agent(team, &manifest)?;
 
-    inject_app_credentials(&session.ws_path, &team.name, member_name);
+    setup_launch_credentials(session, &team.name, member_name);
 
     let mut tmp_file = tempfile::Builder::new()
         .prefix("bm-session-")
@@ -378,63 +549,28 @@ pub fn launch_session(
         )
     })?;
 
-    let mut agent_args = format!("{} {}", prompt_flag, tmp_path_str);
+    let mut args: Vec<String> = vec![
+        prompt_flag.to_string(),
+        tmp_path_str.to_string(),
+    ];
     if autonomous {
         if let Some(flag) = coding_agent.skip_permissions_flag.as_deref() {
-            agent_args.push(' ');
-            agent_args.push_str(flag);
+            args.push(flag.to_string());
         }
     }
-
-    // TODO: uses create_local_formation() regardless of resolved type — breaks for Lima/K8s (ADR-0008)
-    let resolved_formation = crate::formation::resolve_formation(team_repo, None)?;
-
     if let Some(prompt) = initial_prompt {
-        let escaped = prompt.replace('\'', "'\\''");
-        let shell_cmd = format!(
-            "(printf '%s\\n' '{}'; cat) | {} {}",
-            escaped, coding_agent.binary, agent_args
-        );
-
-        if resolved_formation.is_some() {
-            let local_formation = crate::formation::create_local_formation(&team.name)?;
-            local_formation.exec_in(&session.ws_path, &["sh", "-c", &shell_cmd])?;
-        } else {
-            use std::os::unix::process::CommandExt;
-            let mut cmd = std::process::Command::new("sh");
-            cmd.current_dir(&session.ws_path)
-                .arg("-c")
-                .arg(&shell_cmd);
-            let err = cmd.exec();
-            bail!("Failed to launch shell: {}", err);
-        }
-    } else {
-        if resolved_formation.is_some() {
-            let local_formation = crate::formation::create_local_formation(&team.name)?;
-            let mut cmd_parts: Vec<&str> = vec![&coding_agent.binary, prompt_flag, tmp_path_str];
-            if autonomous {
-                if let Some(flag) = coding_agent.skip_permissions_flag.as_deref() {
-                    cmd_parts.push(flag);
-                }
-            }
-            local_formation.exec_in(&session.ws_path, &cmd_parts)?;
-        } else {
-            use std::os::unix::process::CommandExt;
-            let mut cmd = std::process::Command::new(&coding_agent.binary);
-            cmd.current_dir(&session.ws_path)
-                .arg(prompt_flag)
-                .arg(tmp_path_str);
-            if autonomous {
-                if let Some(flag) = coding_agent.skip_permissions_flag.as_deref() {
-                    cmd.arg(flag);
-                }
-            }
-            let err = cmd.exec();
-            bail!("Failed to launch {}: {}", coding_agent.binary, err);
-        }
+        args.push(prompt.to_string());
     }
 
-    Ok(())
+    let spawn_config = spawn::SpawnConfig {
+        agent_binary: coding_agent.binary.clone(),
+        agent_args: args,
+        working_dir: session.ws_path.clone(),
+        env_vars: vec![],
+    };
+
+    let result = spawn::spawn_and_wait(&spawn_config)?;
+    Ok(result.exit_code)
 }
 
 /// Resolves a member name from a role. Scans the team repo's `members/`
@@ -477,27 +613,19 @@ pub fn resolve_member_by_role(team_repo: &Path, role: &str) -> Result<String> {
     }
 }
 
-/// Prepares a meeting session. Unlike `prepare_chat_session()`, this does
-/// NOT build a meta-prompt from ralph.yml/hats/skills/guardrails. The
-/// meeting's `instructions` field IS the system prompt.
-pub fn prepare_meeting_session(
-    team_path: &Path,
-    member: &str,
+/// Prepares a meeting session from an ephemeral workspace path provided by the daemon.
+/// The meeting's `instructions` field IS the system prompt — no meta-prompt assembly.
+pub fn prepare_meeting_session_from_path(
+    workspace_path: &Path,
     instructions: &str,
 ) -> Result<AgentSession> {
     if instructions.trim().is_empty() {
         bail!("Meeting instructions must not be empty");
     }
-    let ws_path = team_path.join(member);
-    if !ws_path.join(".botminter.workspace").exists() {
-        bail!(
-            "No workspace found for member '{}'. Run `bm teams sync` first.",
-            member
-        );
-    }
     Ok(AgentSession {
         meta_prompt: instructions.to_string(),
-        ws_path,
+        ws_path: workspace_path.to_path_buf(),
+        credential_dir: None,
     })
 }
 
@@ -1014,46 +1142,68 @@ mod tests {
     }
 
     #[test]
-    fn prepare_meeting_session_empty_instructions_fails() {
+    fn prepare_meeting_session_from_path_empty_instructions_fails() {
         let tmp = tempfile::tempdir().unwrap();
-        let result = prepare_meeting_session(tmp.path(), "engineer-01", "   ");
+        let result = prepare_meeting_session_from_path(tmp.path(), "   ");
         let err = result.err().expect("should fail for empty instructions");
-        assert!(
-            err.to_string().contains("must not be empty")
-        );
+        assert!(err.to_string().contains("must not be empty"));
     }
 
     #[test]
-    fn prepare_meeting_session_missing_workspace_fails() {
+    fn prepare_meeting_session_from_path_returns_valid_session() {
         let tmp = tempfile::tempdir().unwrap();
-        let result =
-            prepare_meeting_session(tmp.path(), "engineer-01", "You are an engineer.");
-        let err = result.err().expect("should fail for missing workspace");
-        assert!(
-            err.to_string().contains("No workspace found")
-        );
-    }
-
-    #[test]
-    fn prepare_meeting_session_returns_valid_session() {
-        let tmp = tempfile::tempdir().unwrap();
-        let ws = tmp.path().join("engineer-01");
-        std::fs::create_dir_all(&ws).unwrap();
-        std::fs::write(ws.join(".botminter.workspace"), "").unwrap();
-
-        let session =
-            prepare_meeting_session(tmp.path(), "engineer-01", "You are an engineer.")
-                .expect("should succeed with valid workspace");
+        let session = prepare_meeting_session_from_path(tmp.path(), "You are an engineer.")
+            .expect("should succeed with any path");
         assert_eq!(session.meta_prompt, "You are an engineer.");
-        assert_eq!(session.ws_path, ws);
+        assert_eq!(session.ws_path, tmp.path());
     }
 
-    // inject_app_credentials tests
-    // NOTE: These tests manipulate process-global env vars and MUST run
-    // with --test-threads=1.
+    #[test]
+    fn prepare_chat_session_from_path_sets_credential_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        // Team repo: members/<member> dir + botminter.yml for manifest
+        let team_repo = tmp.path().join("team");
+        let member_dir = team_repo.join("members").join("engineer-alice");
+        std::fs::create_dir_all(&member_dir).unwrap();
+        std::fs::write(
+            team_repo.join("botminter.yml"),
+            "name: test\ndisplay_name: Test\ndescription: d\nversion: 1.0.0\nschema_version: \"1\"\nroles: []\n",
+        )
+        .unwrap();
+
+        // Workspace: minimal ralph.yml + PROMPT.md
+        let workspace = tmp.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::write(workspace.join("ralph.yml"), "hats: {}\n").unwrap();
+        std::fs::write(workspace.join("PROMPT.md"), "# Objective\n").unwrap();
+
+        let session = prepare_chat_session_from_path(
+            &team_repo,
+            "test-team",
+            "engineer-alice",
+            &workspace,
+            None,
+        )
+        .expect("session should be created");
+
+        let cred_dir = session
+            .credential_dir
+            .expect("credential_dir must be Some, not None");
+        let cred_str = cred_dir.to_str().unwrap();
+        assert!(
+            cred_str.ends_with("sessions/test-team/credentials/engineer-alice"),
+            "credential_dir must be sessions_base/credentials/<member>, got: {cred_str}"
+        );
+    }
+
+    // inject_app_credentials tests — serialized via mutex because they
+    // manipulate process-global env vars (GH_TOKEN, GITHUB_TOKEN, GH_CONFIG_DIR).
+    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn inject_app_credentials_sets_gh_config_dir_when_hosts_yml_present() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let gh_dir = tmp.path().join(".config/gh");
         std::fs::create_dir_all(&gh_dir).unwrap();
@@ -1061,7 +1211,7 @@ mod tests {
 
         std::env::remove_var("GH_CONFIG_DIR");
 
-        let result = inject_app_credentials(tmp.path(), "test-team", "test-member");
+        let result = inject_app_credentials(tmp.path(), None, "test-team", "test-member");
 
         assert!(result, "Should return true when credentials are available");
         let config_dir =
@@ -1077,6 +1227,7 @@ mod tests {
 
     #[test]
     fn inject_app_credentials_removes_conflicting_tokens() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let gh_dir = tmp.path().join(".config/gh");
         std::fs::create_dir_all(&gh_dir).unwrap();
@@ -1085,7 +1236,7 @@ mod tests {
         std::env::set_var("GH_TOKEN", "should-be-removed");
         std::env::set_var("GITHUB_TOKEN", "should-be-removed");
 
-        let result = inject_app_credentials(tmp.path(), "test-team", "test-member");
+        let result = inject_app_credentials(tmp.path(), None, "test-team", "test-member");
 
         assert!(result, "Should return true when credentials are available");
         assert!(
@@ -1104,13 +1255,14 @@ mod tests {
 
     #[test]
     fn inject_app_credentials_noop_when_no_config_dir() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
 
         std::env::set_var("GH_TOKEN", "preserved");
         std::env::set_var("GITHUB_TOKEN", "preserved");
         std::env::remove_var("GH_CONFIG_DIR");
 
-        let result = inject_app_credentials(tmp.path(), "test-team", "test-member");
+        let result = inject_app_credentials(tmp.path(), None, "test-team", "test-member");
 
         assert!(!result, "Should return false when no credentials directory");
         assert!(
@@ -1134,18 +1286,225 @@ mod tests {
 
     #[test]
     fn inject_app_credentials_noop_when_hosts_yml_missing() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let gh_dir = tmp.path().join(".config/gh");
         std::fs::create_dir_all(&gh_dir).unwrap();
 
         std::env::remove_var("GH_CONFIG_DIR");
 
-        let result = inject_app_credentials(tmp.path(), "test-team", "test-member");
+        let result = inject_app_credentials(tmp.path(), None, "test-team", "test-member");
 
         assert!(!result, "Should return false when hosts.yml is missing");
         assert!(
             std::env::var("GH_CONFIG_DIR").is_err(),
             "GH_CONFIG_DIR should not be set when hosts.yml is missing"
+        );
+
+        std::env::remove_var("GH_CONFIG_DIR");
+    }
+
+    #[test]
+    fn inject_app_credentials_sets_gh_config_dir_to_shared_credential_dir() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().unwrap();
+        // hosts.yml lives at <credential_dir>/gh/hosts.yml (D-02 shared path)
+        let shared_gh_dir = tmp.path().join("gh");
+        std::fs::create_dir_all(&shared_gh_dir).unwrap();
+        std::fs::write(
+            shared_gh_dir.join("hosts.yml"),
+            "github.com:\n  oauth_token: shared_token\n",
+        )
+        .unwrap();
+
+        std::env::remove_var("GH_CONFIG_DIR");
+
+        let result = inject_app_credentials_from_shared_dir(tmp.path());
+
+        assert!(
+            result,
+            "inject_app_credentials_from_shared_dir must return true when \
+             hosts.yml exists at <credential_dir>/gh/hosts.yml"
+        );
+        let config_dir =
+            std::env::var("GH_CONFIG_DIR").expect("GH_CONFIG_DIR must be set after injection");
+        assert_eq!(
+            config_dir,
+            shared_gh_dir.to_str().unwrap(),
+            "GH_CONFIG_DIR must point to the shared credential gh/ subdir, \
+             not workspace/.config/gh/"
+        );
+
+        std::env::remove_var("GH_CONFIG_DIR");
+    }
+
+    // ── CT-154-03: inject_app_credentials must use D-02 shared path ─────────
+
+    #[test]
+    fn inject_app_credentials_uses_d02_credential_dir_over_workspace_config_gh() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().unwrap();
+
+        // hosts.yml exists ONLY at the D-02 shared path, NOT at ws/.config/gh
+        let credential_dir = tmp.path().join("credentials").join("alice");
+        let shared_gh_dir = credential_dir.join("gh");
+        std::fs::create_dir_all(&shared_gh_dir).unwrap();
+        std::fs::write(
+            shared_gh_dir.join("hosts.yml"),
+            "github.com:\n    oauth_token: shared_token\n",
+        )
+        .unwrap();
+
+        std::env::remove_var("GH_CONFIG_DIR");
+
+        // credential_dir is provided; ws_path has no .config/gh/hosts.yml
+        let result = inject_app_credentials(tmp.path(), Some(&credential_dir), "team", "alice");
+
+        assert!(
+            result,
+            "inject_app_credentials must return true when credential_dir/gh/hosts.yml exists, \
+             even when ws_path/.config/gh/hosts.yml does not"
+        );
+        let config_dir =
+            std::env::var("GH_CONFIG_DIR").expect("GH_CONFIG_DIR must be set after injection");
+        assert_eq!(
+            config_dir,
+            shared_gh_dir.to_str().unwrap(),
+            "GH_CONFIG_DIR must point to D-02 shared path <credential_dir>/gh, \
+             not workspace/.config/gh"
+        );
+
+        std::env::remove_var("GH_CONFIG_DIR");
+    }
+
+    #[test]
+    fn prepare_launch_credentials_uses_shared_credential_dir_when_provided() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().unwrap();
+
+        let ws_path = tmp.path().join("workspace");
+        std::fs::create_dir_all(&ws_path).unwrap();
+        // hosts.yml only at the D-02 shared path — NOT at ws_path/.config/gh
+        let shared_cred_dir = tmp.path().join("credentials").join("alice");
+        let shared_gh_dir = shared_cred_dir.join("gh");
+        std::fs::create_dir_all(&shared_gh_dir).unwrap();
+        std::fs::write(
+            shared_gh_dir.join("hosts.yml"),
+            "github.com:\n    oauth_token: shared_token\n",
+        )
+        .unwrap();
+
+        std::env::remove_var("GH_CONFIG_DIR");
+
+        let injected =
+            prepare_launch_credentials(&ws_path, Some(&shared_cred_dir), "team", "alice");
+
+        assert!(
+            injected,
+            "prepare_launch_credentials must return true when shared_credential_dir/gh/hosts.yml \
+             exists, even when ws_path/.config/gh does not"
+        );
+        let config_dir = std::env::var("GH_CONFIG_DIR").expect(
+            "GH_CONFIG_DIR must be set to shared credential path after prepare_launch_credentials \
+             with Some(shared_credential_dir)",
+        );
+        assert_eq!(
+            config_dir,
+            shared_gh_dir.to_str().unwrap(),
+            "GH_CONFIG_DIR must point to shared credential dir/gh, not ws_path/.config/gh"
+        );
+
+        std::env::remove_var("GH_CONFIG_DIR");
+    }
+
+    #[test]
+    fn setup_launch_credentials_uses_credential_dir_not_workspace_path() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().unwrap();
+
+        // D-02 shared path: sessions_base/credentials/<member> (no /gh suffix)
+        let credential_dir = tmp.path().join("credentials").join("alice");
+        let credential_gh_dir = credential_dir.join("gh");
+        std::fs::create_dir_all(&credential_gh_dir).unwrap();
+        std::fs::write(
+            credential_gh_dir.join("hosts.yml"),
+            "github.com:\n    oauth_token: shared_token\n",
+        )
+        .unwrap();
+
+        // ws_path has NO .config/gh/hosts.yml — only the shared credential dir has it
+        let ws_path = tmp.path().join("ws");
+        std::fs::create_dir_all(&ws_path).unwrap();
+
+        let session = AgentSession {
+            meta_prompt: "test".to_string(),
+            ws_path,
+            credential_dir: Some(credential_dir.clone()),
+        };
+
+        std::env::remove_var("GH_CONFIG_DIR");
+
+        let injected = setup_launch_credentials(&session, "team", "alice");
+
+        assert!(
+            injected,
+            "setup_launch_credentials must return true when credential_dir/gh/hosts.yml exists \
+             (session.credential_dir = Some), even when ws_path/.config/gh does not"
+        );
+        let config_dir = std::env::var("GH_CONFIG_DIR").expect(
+            "GH_CONFIG_DIR must be set to D-02 shared credential path when \
+             session.credential_dir is Some",
+        );
+        assert_eq!(
+            config_dir,
+            credential_gh_dir.to_str().unwrap(),
+            "GH_CONFIG_DIR must point to credential_dir/gh (D-02 shared path), \
+             not ws_path/.config/gh (deprecated permanent workspace path)"
+        );
+
+        std::env::remove_var("GH_CONFIG_DIR");
+    }
+
+    #[test]
+    fn setup_launch_credentials_credential_dir_excludes_gh_suffix_gh_appended_internally() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().unwrap();
+
+        // credential_dir = sessions_base/credentials/<member> — NO /gh suffix
+        // The /gh suffix is appended internally by inject_app_credentials_from_shared_dir
+        let credential_dir = tmp.path().join("sessions").join("credentials").join("bob");
+        let credential_gh_dir = credential_dir.join("gh");
+        std::fs::create_dir_all(&credential_gh_dir).unwrap();
+        std::fs::write(
+            credential_gh_dir.join("hosts.yml"),
+            "github.com:\n    oauth_token: bob_token\n",
+        )
+        .unwrap();
+
+        let ws_path = tmp.path().join("ws");
+        std::fs::create_dir_all(&ws_path).unwrap();
+
+        let session = AgentSession {
+            meta_prompt: "test".to_string(),
+            ws_path,
+            credential_dir: Some(credential_dir.clone()),
+        };
+
+        std::env::remove_var("GH_CONFIG_DIR");
+
+        let injected = setup_launch_credentials(&session, "team", "bob");
+        assert!(
+            injected,
+            "setup_launch_credentials must return true when credential_dir is \
+             sessions_base/credentials/bob and credential_dir/gh/hosts.yml exists"
+        );
+
+        let config_dir = std::env::var("GH_CONFIG_DIR").expect("GH_CONFIG_DIR must be set");
+        assert_eq!(
+            config_dir,
+            credential_gh_dir.to_str().unwrap(),
+            "GH_CONFIG_DIR must equal credential_dir/gh — /gh is appended internally, \
+             credential_dir itself must not contain /gh"
         );
 
         std::env::remove_var("GH_CONFIG_DIR");

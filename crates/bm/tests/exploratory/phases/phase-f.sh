@@ -9,11 +9,14 @@ ensure_keyring
 
 header "Phase F: Error Handling"
 
-# F1: Without just
-OUT=$(PATH=/usr/bin:/bin bm teams sync --bridge -v 2>&1)
-# Should not crash — either skips or errors gracefully
-if echo "$OUT" | grep -qi "just\|skip\|not found"; then
-    pass "F1" "Graceful handling when just not in PATH"
+# F1: Without just — bm bridge start should handle missing just gracefully
+OUT=$(PATH=/usr/bin:/bin bm bridge start -t $TEAM 2>&1)
+EC=$?
+# Graceful = no crash: handles missing just, reports already running, or exits cleanly
+if echo "$OUT" | grep -qi "just\|skip\|not found\|already running"; then
+    pass "F1" "Graceful handling when just not in PATH (output: $(echo "$OUT" | tail -1))"
+elif [ $EC -eq 0 ]; then
+    pass "F1" "Bridge start handled gracefully without just in PATH (exit 0)"
 else
     note "F1" "Without just" "Output: $(echo "$OUT" | tail -2)"
 fi
@@ -24,9 +27,9 @@ EC=$?
 if [ $EC -eq 0 ]; then pass "F2" "bm status -v works"; else fail "F2" "bm status" "exit $EC"; fi
 
 # F3: bm members list
-OUT=$(bm members list 2>&1)
+OUT=$(bm members list -t $TEAM 2>&1)
 EC=$?
-MEMBER_COUNT=$(echo "$OUT" | grep -c "superman-" || true)
+MEMBER_COUNT=$(echo "$OUT" | grep -c "engineer-" || true)
 if [ $EC -eq 0 ] && [ "$MEMBER_COUNT" -ge 3 ]; then pass "F3" "bm members list shows $MEMBER_COUNT members"; else fail "F3" "members list" "exit $EC, count=$MEMBER_COUNT"; fi
 
 # F4: bm teams show

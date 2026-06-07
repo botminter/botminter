@@ -19,6 +19,7 @@ use tokio::task::JoinHandle;
 
 /// A mock GitHub server for testing the manifest flow.
 pub struct GitHubMock {
+    #[allow(dead_code)]
     pub port: u16,
     pub base_url: String,
     _handle: JoinHandle<()>,

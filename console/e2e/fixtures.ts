@@ -5,7 +5,8 @@ import type {
 	ProcessData,
 	MemberListEntry,
 	MemberDetail,
-	TreeResponse
+	TreeResponse,
+	ConsoleSessionSummary
 } from '../src/lib/types.js';
 
 export const TEAM = 'my-team';
@@ -108,6 +109,25 @@ export const mockMemberDetail: MemberDetail = {
 	skill_dirs: ['gh', 'board-scanner']
 };
 
+export const mockSessions: ConsoleSessionSummary[] = [
+	{
+		session_id: 'session-abc-123',
+		member_name: 'superman-alice',
+		state: 'Active',
+		session_type: 'Loop',
+		created_at: '2026-01-01T10:00:00Z',
+		finalization_status: 'n/a'
+	},
+	{
+		session_id: 'session-def-456',
+		member_name: 'team-manager-mgr',
+		state: 'Completed',
+		session_type: 'Interactive',
+		created_at: '2026-01-01T09:00:00Z',
+		finalization_status: 'completed'
+	}
+];
+
 export const mockTree: TreeResponse = {
 	path: '',
 	entries: [
@@ -146,6 +166,10 @@ export async function mockApi(page: Page): Promise<void> {
 
 	await page.route(`**/api/teams/${TEAM}/members`, (route) =>
 		route.fulfill({ json: mockMembers })
+	);
+
+	await page.route(`**/api/teams/${TEAM}/sessions`, (route) =>
+		route.fulfill({ json: mockSessions })
 	);
 
 	await page.route(`**/api/teams/${TEAM}/tree**`, (route) =>

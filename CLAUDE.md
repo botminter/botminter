@@ -73,6 +73,8 @@ bm-agent inbox read [--format json|hook]           # Read and consume pending me
 bm-agent inbox peek                                # View pending messages without consuming
 bm-agent claude hook post-tool-use                 # PostToolUse hook — always exits 0
 bm-agent loop start "prompt" [--member <name>]     # Start a Ralph loop via daemon HTTP API
+bm-agent lock acquire <work-item-id>               # Acquire exclusive work-item lock (exit 0=acquired, 1=contended)
+bm-agent lock release <work-item-id>               # Release work-item lock held by this session
 ```
 
 See ADR-0010 (`.planning/adrs/0010-agent-tools-namespace.md`) for why this is a separate binary.

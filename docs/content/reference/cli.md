@@ -258,7 +258,7 @@ bm credentials export -o team-creds.yml
 
 # New machine:
 bm init --credentials-file team-creds.yml
-bm teams sync -a
+bm start
 ```
 
 ### `bm members list`
@@ -330,7 +330,7 @@ bm chat <member> [-t <team>] [--hat <hat>] [--render-system-prompt]
     - `bm chat <member> --hat executor` — hat-specific mode: agent is in character as that hat
     - `bm chat <member> --render-system-prompt` — prints the generated system prompt to stdout and exits (for debugging/inspection). Works with `--hat` too.
 - In normal mode: writes the meta-prompt to a temp file and launches the coding agent via `formation.exec_in()` (v2 teams) or direct process exec (v1 teams)
-- Requires a workspace created by `bm teams sync`
+- Creates an ephemeral session workspace automatically
 
 ### `bm meetings`
 
@@ -527,31 +527,9 @@ bm teams show [<name>] [-t <team>]
 - Lists hired members with their roles
 - Lists configured projects with their fork URLs
 
-### `bm teams sync`
+### `bm teams sync` (removed)
 
-Provision and reconcile workspaces.
-
-```bash
-bm teams sync [--repos] [--bridge] [--all|-a] [-v] [-t <team>]
-```
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `--repos` | No | Push team repo to GitHub before syncing; also creates workspace repos on GitHub for new members |
-| `--bridge` | No | Provision bridge identities and rooms on the bridge |
-| `--all` / `-a` | No | Equivalent to `--repos --bridge` (all remote operations) |
-| `-v` | No | Show detailed sync status per workspace (submodule updates, file copy decisions, branch state) |
-| `-t <team>` | No | Team to operate on |
-
-**Behavior:**
-
-- Performs schema version guard
-- Optionally pushes team repo (`git push`)
-- Discovers hired members and configured projects
-- For each member: creates or syncs a workspace repo
-- New workspace: creates a git repo with `team/` submodule (and `projects/<name>/` submodules), copies context files, assembles agent dir, writes `.gitignore` and `.botminter.workspace` marker
-- Existing workspace: updates submodules to latest, checks out member branches, re-copies context files when newer, re-assembles agent dir symlinks, commits and pushes changes
-- Reports summary: "Synced N workspaces (M created, K updated)"
+This command has been removed. Sessions automatically contain the latest committed state — no manual synchronization is needed. Use `bm start` to create sessions and `bm minty` to migrate existing permanent workspaces to the session model.
 
 ## Process lifecycle
 
@@ -575,11 +553,11 @@ bm up [<member>] [-t <team>] [--formation <name>]
 
 **Behavior:**
 
+- Creates an ephemeral session workspace for each member — a fresh git worktree hydrated from shared bare clones containing the latest committed state
 - For local bridges: auto-starts the bridge if not already running (skipped when starting a single member)
 - If bridge is already running, verifies health and skips restart
 - Checks for `ralph` binary prerequisite
 - Resolves per-member credentials from keyring or environment variables
-- Discovers member workspaces
 - Detects chat-first members (brain mode) via `brain-prompt.md` in workspace
 - For brain members: launches the brain multiplexer (`bm brain-run`) which runs an ACP session with event watcher and heartbeat
 - For standard members: launches `ralph run -p PROMPT.md` as background process
@@ -606,8 +584,8 @@ bm stop [<member>] [-t <team>] [-f|--force] [--bridge] [--all]
 
 **Behavior:**
 
-- Graceful mode (default): sends SIGTERM to brain members (multiplexer handles shutdown), runs `ralph loops stop` for standard members, polls for 60s
-- Force mode (`--force`): sends SIGTERM immediately to all members
+- Graceful mode (default): sends SIGTERM to brain members (multiplexer handles shutdown), runs `ralph loops stop` for standard members, polls for 60s; session finalization runs asynchronously after the agent exits
+- Force mode (`--force`): sends SIGTERM immediately; session transitions to **Killed** state and finalization is skipped — the workspace is retained for inspection
 - Cleans state.json entries
 - Suggests `bm stop -f` on graceful failure
 - When stopping a single member, bridge lifecycle is not affected
@@ -637,6 +615,119 @@ bm status [-t <team>] [-v]
 - Checks PID liveness via `kill(pid, 0)`
 - Auto-cleans crashed entries
 - Verbose mode shows per-member submodule status (up-to-date/behind/modified) and queries Ralph CLI commands per running member
+
+!!! note "Session history moved"
+    `--history` has been removed. Use `bm session list` to view active and terminal sessions.
+
+### `bm session`
+
+Session management commands: list, finalize, inspect, and cleanup.
+
+```bash
+bm session list [--json] [-t <team>]
+bm session finalize <session-id> [-t <team>]
+bm session inspect <session-id> [-t <team>]
+bm session cleanup [<session-id>] [--all] [--member <name>] [--older-than <duration>] [-t <team>]
+```
+
+#### `bm session list`
+
+List all sessions (active and terminal) with finalization status. Replaces `bm status --history`.
+
+```bash
+bm session list [--json] [-t <team>]
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--json` | No | Output as JSON array |
+| `-t <team>` | No | Team to operate on |
+
+**Behavior:**
+
+- Shows all active sessions (Active, Finalizing) and terminal sessions (Completed, Failed, Killed, Retained)
+- Displays session ID, member, type, state, finalization status, start time, and end time
+- JSON output is suitable for scripting and downstream tooling
+
+**Example:**
+
+```bash
+bm session list
+bm session list --json
+```
+
+#### `bm session finalize`
+
+Trigger finalization of a retained session that did not finalize automatically.
+
+```bash
+bm session finalize <session-id> [-t <team>]
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `<session-id>` | Yes | Session ID to finalize |
+| `-t <team>` | No | Team to operate on |
+
+**Behavior:**
+
+- Sends a retrigger request to the daemon for the given session
+- The session must be in **Retained** state
+- Exits non-zero with an error message if finalization cannot be triggered
+
+**Example:**
+
+```bash
+bm session finalize sess-abc123
+```
+
+#### `bm session inspect`
+
+Show full details for a specific session.
+
+```bash
+bm session inspect <session-id> [-t <team>]
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `<session-id>` | Yes | Session ID to inspect |
+| `-t <team>` | No | Team to operate on |
+
+**Behavior:**
+
+- Displays session ID, member, type, state, start time, end time, and workspace path
+- Shows finalization status for terminal sessions
+
+#### `bm session cleanup`
+
+Clean up retained sessions or re-trigger finalization.
+
+```bash
+bm session cleanup [<session-id>] [--all] [--member <name>] [--older-than <duration>] [-t <team>]
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `<session-id>` | No | Session ID to clean up (omit to use a filter flag) |
+| `--all` | No | Clean up all retained sessions |
+| `--member <name>` | No | Clean up all retained sessions for a specific member |
+| `--older-than <duration>` | No | Clean up sessions older than a duration (e.g. `48h`, `7d`, `30m`) |
+| `-t <team>` | No | Team to operate on |
+
+**Behavior:**
+
+- For sessions in **Retained** state: removes the workspace and marks the session cleaned
+- At least one of `<session-id>`, `--all`, `--member`, or `--older-than` must be specified
+- `--older-than` accepts duration strings: `30m`, `48h`, `7d`
+
+**Example:**
+
+```bash
+bm session inspect sess-abc123
+bm session cleanup --older-than 48h
+bm session cleanup --member engineer-01
+```
 
 ## Profile commands
 
@@ -1113,6 +1204,61 @@ bm-agent loop start "Implement issue #5: add caching" [--member <name>]
 - Prints the loop ID to stdout on success
 - Exits with code 1 if the daemon is not running or the request fails
 
+### `bm-agent lock`
+
+Work-item locking to prevent parallel sessions from processing the same issue simultaneously.
+
+#### `bm-agent lock acquire`
+
+Acquire a work-item lock for this session.
+
+```bash
+bm-agent lock acquire <work-item-id>
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `<work-item-id>` | Yes | Work item ID to lock (e.g. `ISSUE-42`) |
+
+**Behavior:**
+
+- Registers an exclusive in-daemon lock on the given work item for the current session
+- Reads the session ID from the `.botminter.workspace` marker in the workspace root
+- **Exit code 0**: lock acquired successfully
+- **Exit code 1**: work item is already held by another session (holder session ID is printed to stderr)
+- Requires being inside a BotMinter workspace
+
+**Example:**
+
+```bash
+# Acquire; exit 0 means we hold the lock
+bm-agent lock acquire ISSUE-42 || exit 0
+```
+
+#### `bm-agent lock release`
+
+Release a work-item lock held by this session.
+
+```bash
+bm-agent lock release <work-item-id>
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `<work-item-id>` | Yes | Work item ID to release (e.g. `ISSUE-42`) |
+
+**Behavior:**
+
+- Releases the in-daemon lock on the given work item for the current session
+- No-op if the current session does not hold the lock
+- Exits non-zero if the daemon cannot be reached
+
+**Example:**
+
+```bash
+bm-agent lock release ISSUE-42
+```
+
 ## Development commands
 
 These are in the root Justfile for developing BotMinter itself:
@@ -1126,7 +1272,7 @@ just clippy   # cargo clippy -p bm -- -D warnings
 ## Related topics
 
 - [Getting Started](../getting-started/index.md) — first-use walkthrough
-- [Workspace Model](../concepts/workspace-model.md) — how `bm teams sync` structures workspaces
+- [Workspace Model](../concepts/workspace-model.md) — session workspace layout and lifecycle
 - [Generate a Team Repo](../how-to/generate-team-repo.md) — detailed `bm init` guide
 - [Configuration Files](configuration.md) — daemon config, formation config, and credential fields
 - [Manage Knowledge](../how-to/manage-knowledge.md) — adding and organizing knowledge files

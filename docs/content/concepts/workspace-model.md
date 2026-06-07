@@ -1,6 +1,6 @@
 # Workspace Model
 
-Each team member runs in an isolated **workspace repo** — a dedicated GitHub-hosted git repository containing submodules for the team repo and project forks. Context files live at the workspace root as tracked, first-class citizens.
+Each team member runs in an isolated **session workspace** — an ephemeral workspace created on demand from shared repository clones. Context files are assembled at the workspace root as tracked, first-class citizens.
 
 ## Workspace layout
 
@@ -8,54 +8,67 @@ Each team member runs in an isolated **workspace repo** — a dedicated GitHub-h
 workzone/
   my-team/                                        # Team directory
     team/                                         # Team repo (control plane, git repo)
-    engineer-01/                                  # Workspace repo for member
-      .gitmodules
-      team/                                       # Submodule → org/my-team (team repo)
-      projects/
-        my-project/                               # Submodule → org/my-project (fork)
-      CLAUDE.md                                   # Copied from team/members/<member>/CLAUDE.md
-      PROMPT.md                                   # Copied from team/members/<member>/PROMPT.md
-      ralph.yml                                   # Copied from team/members/<member>/ralph.yml
-      .claude/
-        agents/                                   # Symlinks into team/ submodule paths
-        settings.json                             # Team-level (from coding-agent/settings.json)
-        settings.local.json                       # Member-level (from members/<member>/coding-agent/)
-      .botminter.workspace                        # Marker file
-      .ralph/                                     # Ralph runtime state (gitignored)
+    .clones/                                      # Shared bare clones
+      <hash>/                                     # Bare clone (team repo or project repo)
+    sessions/
+      <session-id>/                               # Ephemeral session workspace
+        .gitmodules
+        team/                                       # Git worktree from team clone
+        projects/
+          my-project/                               # Git worktree from project clone
+        CLAUDE.md                                   # Assembled from team/members/<member>/CLAUDE.md
+        PROMPT.md                                   # Assembled from team/members/<member>/PROMPT.md
+        ralph.yml                                   # Assembled from team/members/<member>/ralph.yml
+        .claude/
+          agents/                                   # Symlinks into team/ paths
+          settings.json                             # Team-level (from coding-agent/settings.json)
+          settings.local.json                       # Member-level (from members/<member>/coding-agent/)
+        .botminter.workspace                        # Marker file (includes session ID)
+        .ralph/                                     # Ralph runtime state (session-scoped)
 ```
 
 The specific member names (e.g., `engineer-01`, `architect-01`) depend on the [profile](profiles.md). The workspace structure is the same for all profiles.
 
-The agent's working directory (CWD) is the workspace repo root. Projects are accessible as submodules under `projects/`. The team repo is accessible at `team/`.
+The agent's working directory (CWD) is the session workspace root. Projects are accessible as git worktrees under `projects/`. The team repo is accessible at `team/`.
+
+## Session lifecycle
+
+Sessions are created by `bm start`, `bm chat`, or `bm meetings` and follow a defined lifecycle:
+
+1. **Creating** — workspace is being hydrated from shared clones
+2. **Active** — agent is running in the workspace
+3. **Finalizing** — agent has exited, uncommitted work is being committed and pushed
+4. **Completed** — finalization succeeded, workspace enters retention
+5. **Retained** — workspace is kept for diagnostic inspection
+6. **Removed** — workspace is cleaned up by the retention engine
+
+See the [design document](https://github.com/devguyio-bot-squad/may-team-team/blob/main/specs/botminter/85-ephemeral-workspaces/design.md) for the full state machine.
 
 ## Context files
 
-Context files (CLAUDE.md, PROMPT.md, ralph.yml) are **copied** from the team submodule to the workspace root during `bm teams sync`. They are **tracked** in the workspace repo — committed, versioned, and directly visible to the agent.
+Context files (CLAUDE.md, PROMPT.md, ralph.yml) are **assembled** from the team repo into the workspace root during session creation. They are present as regular files in the session workspace.
 
 | File | Method | Update mechanism |
 |------|--------|-----------------|
-| `CLAUDE.md` | Copy | `bm teams sync` re-copies if team submodule version is newer |
-| `PROMPT.md` | Copy | `bm teams sync` re-copies if team submodule version is newer |
-| `ralph.yml` | Copy | `bm teams sync` re-copies if team submodule version is newer |
-| `settings.json` | Copy | `bm teams sync` re-copies from `team/coding-agent/settings.json` (team-level hooks) |
-| `settings.local.json` | Copy | `bm teams sync` re-copies from `team/members/<member>/coding-agent/` |
-| Agent files (`.claude/agents/`) | Symlink | `bm teams sync` re-assembles symlinks into `team/` submodule paths |
-| Skills | Direct read | Ralph reads from `team/` submodule paths via `skills.dirs` |
+| `CLAUDE.md` | Assembled | Created fresh each session from `team/members/<member>/CLAUDE.md` |
+| `PROMPT.md` | Assembled | Created fresh each session from `team/members/<member>/PROMPT.md` |
+| `ralph.yml` | Assembled | Created fresh each session from `team/members/<member>/ralph.yml` |
+| `settings.json` | Assembled | Created fresh each session from `team/coding-agent/settings.json` |
+| `settings.local.json` | Assembled | Created fresh each session from `team/members/<member>/coding-agent/` |
+| Agent files (`.claude/agents/`) | Symlink | Assembled each session with symlinks into `team/` paths |
+| Skills | Direct read | Ralph reads from `team/` paths via `skills.dirs` |
 
-## Submodules
+Changes to team repo files take effect on the next session start — no manual synchronization needed.
 
-The workspace repo uses git submodules to reference shared repos:
+## Shared clones
 
-| Submodule | Path | Points to |
-|-----------|------|-----------|
-| Team repo | `team/` | The team's GitHub repo (control plane) |
-| Project fork | `projects/<project>/` | A project fork on GitHub |
+Shared clones are permanent bare git repositories stored in the team's `.clones/` directory. Each clone is named by a SHA-256 hash of the repository URL.
 
-Each submodule checks out a **member branch** (e.g., `engineer-01`). This gives each agent its own branch to work on without conflicting with other members.
+Sessions create git worktrees from these clones, sharing the object store for disk efficiency. Before creating a worktree, the system fetches from remote if the clone hasn't been fetched within the freshness threshold.
 
-### Team repo submodule (`team/`)
+### Team repo (`team/`)
 
-The `team/` submodule contains all team configuration:
+The `team/` directory in each session is a git worktree from the team repo's shared clone. It contains all team configuration:
 
 | Content | Path |
 |---------|------|
@@ -67,64 +80,48 @@ The `team/` submodule contains all team configuration:
 | Team context | `team/CLAUDE.md` |
 | Member configs | `team/members/<member>/` |
 
-Agents update the team submodule at the start of every board scan cycle (`git submodule update --remote team`) to stay current with team configuration changes.
+Agents update the team content at the start of every board scan cycle (`git pull --ff-only` in `team/`) to stay current with team configuration changes.
 
 ### Multi-project agents
 
-An agent assigned multiple projects has multiple submodules under `projects/`:
+An agent assigned multiple projects has multiple git worktrees under `projects/`:
 
 ```
 projects/
-  project-a/                            # Submodule → fork A
-  project-b/                            # Submodule → fork B
+  project-a/                            # Worktree from project-a clone
+  project-b/                            # Worktree from project-b clone
 ```
 
-Work routing is handled by issue labels in the team repo (label per project). The agent reads the label and `cd`s to the right submodule.
+Work routing is handled by issue labels in the team repo (label per project). The agent reads the label and `cd`s to the right project.
 
 ## The `.botminter.workspace` marker
 
-`bm teams sync` writes a `.botminter.workspace` marker file at the workspace root. This marker identifies the directory as a valid BotMinter workspace. `bm start` discovers workspaces by scanning for this marker file.
+The workspace marker file identifies the directory as a valid BotMinter session workspace. It contains the member name, team repo reference, project number, and session ID.
 
-The marker is BotMinter-specific — using `.gitmodules` alone would false-positive on any repo with submodules.
+## Finalization
 
-## Git exclusions
+When a session ends (agent exits), the finalization subagent inspects all repos for uncommitted or unpushed work:
 
-Runtime state (`.ralph/`) is gitignored in the workspace repo. `bm teams sync` writes a `.gitignore` file excluding runtime-only paths.
+| Action | Scope | Examples |
+|--------|-------|---------|
+| Commit and push | Project repos: uncommitted changes on non-default branches | Code on feature branches |
+| Commit and push | Team repo: uncommitted files under `specs/`, `knowledge/` | Spec docs, design files |
+| Push only | Any repo: committed-but-unpushed branches | Committed code not yet pushed |
+| Never commit | Credential files, auth tokens | `.config/gh/hosts.yml` |
+| Leave in place | Runtime state | Logs, locks, diagnostics, event files |
 
-## Syncing a workspace
+## Migration from permanent workspaces
 
-Run `bm teams sync` to create or update workspaces:
+Existing permanent workspaces can be migrated to the shared clone model using `bm minty`. The migration skill:
+1. Discovers permanent workspaces via `.botminter.workspace` markers
+2. Identifies project repos and their remote URLs
+3. Creates bare clones in the team's `.clones/` directory
+4. Sets clone remotes to upstream URLs
 
-**New workspace** (with `--repos`):
-
-1. Create a GitHub repo: `org/<team>-<member>`
-2. Clone locally
-3. Add team repo as `team/` submodule
-4. Checkout member branch in team submodule
-5. For each assigned project: add as `projects/<project>/` submodule
-6. Checkout member branch in each project submodule
-7. Copy context files from `team/members/<member>/` to workspace root
-8. Copy `.claude/settings.json` from `team/coding-agent/settings.json` (if present)
-9. Assemble `.claude/agents/` with symlinks into `team/` submodule paths
-10. Write `.gitignore` and `.botminter.workspace` marker
-11. Commit and push
-
-**Existing workspace:**
-
-1. Update submodules to latest (`git submodule update --remote`)
-2. Checkout member branch in each submodule
-3. Re-copy context files if team submodule versions are newer
-4. Re-assemble `.claude/agents/` symlinks
-5. Commit changes (if any) and push
-
-After syncing, restart agents for `ralph.yml` changes to take effect:
-
-```bash
-bm stop && bm start
-```
+After migration, `bm start` creates ephemeral sessions from the shared clones. Permanent workspace directories remain on disk at their original paths with contents unchanged.
 
 ## Related topics
 
 - [Architecture](architecture.md) — two-layer runtime model
-- [Launch Members](../how-to/launch-members.md) — creating workspaces and launching agents
-- [CLI Reference](../reference/cli.md) — `bm teams sync`, `bm start` commands
+- [Launch Members](../how-to/launch-members.md) — creating sessions and launching agents
+- [CLI Reference](../reference/cli.md) — `bm start`, `bm stop`, `bm status` commands

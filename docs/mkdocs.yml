@@ -15,6 +15,7 @@ nav:
   - Concepts:
     - Architecture: concepts/architecture.md
     - Workspace Model: concepts/workspace-model.md
+    - Session Model: concepts/session-model.md
     - Knowledge & Invariants: concepts/knowledge-invariants.md
     - Coordination Model: concepts/coordination-model.md
     - Profiles: concepts/profiles.md

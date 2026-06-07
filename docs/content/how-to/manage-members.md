@@ -76,7 +76,7 @@ After hiring a member, you can customize its configuration:
 Edit `members/<role>/PROMPT.md` to change role identity and behavioral rules. Edit `members/<role>/CLAUDE.md` to update role context.
 
 !!! note
-    In workspaces, `PROMPT.md` and `CLAUDE.md` are copies from the `team/` submodule. Changes to the source files in the team repo propagate when agents run `bm teams sync` to re-copy from the updated submodule.
+    In session workspaces, `PROMPT.md` and `CLAUDE.md` are assembled from the team repo. Changes to the source files in the team repo take effect automatically on the next session start.
 
 ### Add role-specific knowledge
 
@@ -105,7 +105,7 @@ git commit -m "chore: add architect design quality invariant"
 Edit `members/<role>/ralph.yml` to change hat definitions, event routing, or persistence settings.
 
 !!! warning
-    `ralph.yml` is copied (not symlinked) to workspaces. After editing it, run `bm teams sync` and restart the agent.
+    `ralph.yml` is assembled into session workspaces at creation time. After editing it, restart agents with `bm stop && bm start` for changes to take effect.
 
 ## Remove a member
 

@@ -11,6 +11,7 @@ pub fn start(
     port: u16,
     interval: u64,
     bind: &str,
+    log_level: &str,
 ) -> Result<()> {
     let cfg = config::load()?;
     let team = config::resolve_team(&cfg, team_flag)?;
@@ -21,7 +22,7 @@ pub fn start(
         team.name, mode
     );
 
-    let result = daemon::start_daemon(&team.name, &team_repo, mode, port, interval, bind)?;
+    let result = daemon::start_daemon(&team.name, &team_repo, mode, port, interval, bind, log_level)?;
 
     println!("Daemon started (PID {})", result.pid);
     println!("Console: http://localhost:{}", port);
@@ -89,8 +90,8 @@ pub fn status(team_flag: Option<&str>) -> Result<()> {
 }
 
 /// Handles the hidden `bm daemon-run` command.
-pub fn run_daemon(team: &str, mode: &str, port: u16, interval: u64, bind: &str) -> Result<()> {
-    daemon::run_daemon(team, mode, port, interval, bind)
+pub fn run_daemon(team: &str, mode: &str, port: u16, interval: u64, bind: &str, log_level: &str) -> Result<()> {
+    daemon::run_daemon(team, mode, port, interval, bind, log_level)
 }
 
 /// Formats an ISO 8601 timestamp for display.

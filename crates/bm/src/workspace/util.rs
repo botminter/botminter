@@ -352,6 +352,7 @@ pub(super) fn git_cmd_output(dir: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -616,4 +617,5 @@ mod tests {
         assert_eq!(SubmoduleState::Modified.label(), "modified");
         assert_eq!(SubmoduleState::Uninitialized.label(), "uninitialized");
     }
+
 }

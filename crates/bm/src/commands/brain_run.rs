@@ -196,7 +196,7 @@ const ENV_VAR_ALLOWLIST: &[&str] = &[
     "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_MODEL",
     "ANTHROPIC_BASE_URL",
-    // Vertex AI auth (used by claude CLI and claude-code-acp-rs)
+    // Vertex AI auth (used by claude CLI and claude-agent-acp)
     "ANTHROPIC_VERTEX_PROJECT_ID",
     "CLAUDE_CODE_USE_VERTEX",
     "CLOUD_ML_REGION",
@@ -211,6 +211,8 @@ const ENV_VAR_ALLOWLIST: &[&str] = &[
     "BM_BRAIN_OPERATOR_USER_ID",
     // Team repo path (for gh commands and board awareness)
     "BM_TEAM_REPO",
+    // Durable member-state directory for cross-session persistence (dm-room.json, etc.)
+    "BM_MEMBER_STATE_DIR",
 ];
 
 /// Collect relevant environment variables for the ACP process.

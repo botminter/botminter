@@ -172,13 +172,95 @@ pub fn wait_for_exit(pid: u32, timeout: Duration) {
     panic!("Process {} did not exit within {:?}", pid, timeout);
 }
 
-// ── Process state helpers ───────────────────────────────────────────
+// ── Session workspace helpers ───────────────────────────────────────
 
-pub fn read_pid_from_state(home: &Path) -> Option<u32> {
-    let state_path = home.join(".botminter").join("state.json");
-    let contents = fs::read_to_string(&state_path).ok()?;
-    let state: bm::state::RuntimeState = serde_json::from_str(&contents).ok()?;
-    state.members.values().next().map(|rt| rt.pid)
+/// Find the most-recently-created ephemeral session workspace for a member.
+///
+/// Session workspaces live at `~/.botminter/sessions/<team>/<member>/<session_id>/`.
+pub fn find_session_workspace(home: &Path, team_name: &str, member_name: &str) -> Option<PathBuf> {
+    let sessions_dir = home
+        .join(".botminter")
+        .join("sessions")
+        .join(team_name)
+        .join(member_name);
+    let mut entries: Vec<_> = fs::read_dir(&sessions_dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .collect();
+    // Sort by modification time ascending — last element is most recent
+    entries.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+    entries.last().map(|e| e.path())
+}
+
+/// Poll until the session workspace appears on disk, up to `timeout`.
+pub fn wait_for_session_workspace(
+    home: &Path,
+    team_name: &str,
+    member_name: &str,
+    timeout: Duration,
+) -> Option<PathBuf> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if let Some(ws) = find_session_workspace(home, team_name, member_name) {
+            return Some(ws);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    None
+}
+
+/// Read the PID written by stub-ralph.sh to `<session_ws>/.ralph-stub-pid`.
+pub fn read_stub_pid(session_ws: &Path) -> Option<u32> {
+    fs::read_to_string(session_ws.join(".ralph-stub-pid"))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// Poll until stub-ralph writes its PID file, up to `timeout`.
+pub fn wait_for_stub_pid(session_ws: &Path, timeout: Duration) -> Option<u32> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if let Some(pid) = read_stub_pid(session_ws) {
+            return Some(pid);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    None
+}
+
+/// Returns all session workspace directories for a member, sorted by modification time ascending.
+pub fn list_session_workspaces(home: &Path, team_name: &str, member_name: &str) -> Vec<PathBuf> {
+    let sessions_dir = home.join(".botminter").join("sessions").join(team_name).join(member_name);
+    let mut entries: Vec<_> = fs::read_dir(&sessions_dir)
+        .ok()
+        .into_iter()
+        .flat_map(|rd| rd.filter_map(|e| e.ok()))
+        .filter(|e| e.path().is_dir())
+        .collect();
+    entries.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+    entries.into_iter().map(|e| e.path()).collect()
+}
+
+/// Wait for a NEW session workspace that is NOT in the excluded set to appear.
+pub fn wait_for_new_session_workspace(
+    home: &Path,
+    team_name: &str,
+    member_name: &str,
+    excluded: &std::collections::HashSet<PathBuf>,
+    timeout: Duration,
+) -> Option<PathBuf> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        let workspaces = list_session_workspaces(home, team_name, member_name);
+        if let Some(ws) = workspaces.into_iter().find(|p| !excluded.contains(p)) {
+            return Some(ws);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    None
 }
 
 pub struct ProcessGuard {

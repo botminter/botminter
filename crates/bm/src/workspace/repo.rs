@@ -1105,7 +1105,7 @@ pub(super) mod tests {
     /// `clone_repo` creates a bare git repo at the target path (simulating a
     /// real clone) so that subsequent git operations succeed.
     struct MockRemoteOps {
-        initial_state: RemoteRepoState,
+        _initial_state: RemoteRepoState,
         push_fails: bool,
         calls: RefCell<Vec<String>>,
         state: RefCell<RemoteRepoState>,
@@ -1114,7 +1114,7 @@ pub(super) mod tests {
     impl MockRemoteOps {
         fn new(initial_state: RemoteRepoState, push_fails: bool) -> Self {
             Self {
-                initial_state,
+                _initial_state: initial_state,
                 push_fails,
                 calls: RefCell::new(Vec::new()),
                 state: RefCell::new(initial_state),

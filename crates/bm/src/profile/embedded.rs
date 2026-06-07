@@ -324,7 +324,7 @@ mod tests {
             let workflows_dir = workflows_dir.unwrap();
 
             let dot_files: Vec<_> = workflows_dir.files()
-                .filter(|f| f.path().extension().map_or(false, |e| e == "dot"))
+                .filter(|f| f.path().extension().is_some_and(|e| e == "dot"))
                 .collect();
             assert!(
                 !dot_files.is_empty(),
@@ -357,7 +357,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("Profile '{}' should have workflows/", profile_name));
 
             for file in workflows_dir.files() {
-                if file.path().extension().map_or(true, |e| e != "dot") {
+                if file.path().extension().is_none_or(|e| e != "dot") {
                     continue;
                 }
                 let content = file.contents_utf8().unwrap();

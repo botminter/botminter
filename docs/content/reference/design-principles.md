@@ -90,7 +90,7 @@ Work hats must not subscribe to rejection events when multiple work hats share t
 | Agent CWD is the workspace repo root | Team repo is the `team/` submodule; projects are under `projects/`. |
 | All roles use the same workspace model | Including non-code-working roles. |
 | `.botminter.workspace` marker required | Read by `bm start` to discover workspaces. |
-| PROMPT.md, CLAUDE.md, and ralph.yml are copies | Require `bm teams sync` to update. |
+| PROMPT.md, CLAUDE.md, and ralph.yml are assembled per-session | Assembled from team repo during session creation. Changes take effect on next `bm start`. |
 | Skills read directly via `skills.dirs` | No assembly needed. |
 | Agents symlinked into `.claude/agents/` | From `team/` submodule paths. |
 | `.ralph/` excluded via `.gitignore` | Runtime state is gitignored in the workspace repo. |

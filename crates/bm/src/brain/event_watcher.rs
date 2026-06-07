@@ -665,7 +665,7 @@ mod tests {
         std::fs::create_dir_all(&ralph_dir).unwrap();
 
         let path = ralph_dir.join("events-run1.jsonl");
-        let events = vec![
+        let events = [
             r#"{"topic":"iteration.start","payload":"1","ts":"t1"}"#,
             r#"{"topic":"human.interact","payload":"question","ts":"t2"}"#,
             r#"{"topic":"hat.selected","payload":"builder","ts":"t3"}"#,

@@ -1,7 +1,7 @@
 //! Telegram Operator Journey
 //!
 //! Exercises the Telegram (external) bridge flow as a lighter scenario:
-//! init -> hire -> identity add -> sync -> start -> verify env vars -> stop -> cleanup
+//! init -> hire -> identity add -> provision workspace -> start -> verify env vars -> stop -> cleanup
 //!
 //! No daemon tests, no per-member start/stop, no idempotency second pass.
 //! Just the Telegram-specific bridge lifecycle.
@@ -13,8 +13,12 @@ use std::time::Duration;
 
 use libtest_mimic::Trial;
 
+use bm::workspace;
+use bm::profile::CodingAgentDef;
+
 use super::super::helpers::{
-    cleanup_project_boards, read_pid_from_state,
+    cleanup_project_boards, find_session_workspace, list_session_workspaces,
+    wait_for_new_session_workspace, read_stub_pid, wait_for_stub_pid, wait_for_exit,
     E2eConfig, GithubSuite, ProcessGuard,
 };
 use super::super::telegram;
@@ -103,18 +107,68 @@ fn bridge_identity_add_fn(
     }
 }
 
-fn sync_bridge_and_repos_fn(
+fn provision_workspace_fn(
     _gh_token: String,
 ) -> impl Fn(&mut TestEnv) + Send + std::panic::UnwindSafe + std::panic::RefUnwindSafe + 'static {
     move |env| {
-        let stdout = env.command("bm")
-            .args(["teams", "sync", "--bridge", "--repos", "-t", TEAM_NAME])
-            .run();
-        assert!(!stdout.contains("No bridge configured"));
+        let team_dir = env.home.join("workspaces").join(TEAM_NAME);
+        let team_repo = team_dir.join("team");
 
-        let ws = env.home.join("workspaces").join(TEAM_NAME).join(MEMBER_DIR);
+        let coding_agent = CodingAgentDef {
+            name: "claude-code".to_string(),
+            display_name: "Claude Code".to_string(),
+            context_file: "CLAUDE.md".to_string(),
+            agent_dir: ".claude".to_string(),
+            binary: "claude".to_string(),
+            system_prompt_flag: Some("--append-system-prompt-file".to_string()),
+            skip_permissions_flag: Some("--dangerously-skip-permissions".to_string()),
+        };
+
+        let manifest_path = team_repo.join("botminter.yml");
+        let projects: Vec<(String, String)> = if manifest_path.exists() {
+            let contents = fs::read_to_string(&manifest_path).unwrap();
+            let manifest: serde_yml::Value = serde_yml::from_str(&contents).unwrap();
+            manifest["projects"]
+                .as_sequence()
+                .map(|ps| {
+                    ps.iter()
+                        .filter_map(|p| {
+                            let name = p["name"].as_str()?;
+                            let url = p["fork_url"].as_str()?;
+                            Some((name.to_string(), url.to_string()))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let project_refs: Vec<(&str, &str)> = projects
+            .iter()
+            .map(|(n, u)| (n.as_str(), u.as_str()))
+            .collect();
+
+        let params = workspace::WorkspaceRepoParams {
+            team_repo_path: &team_repo,
+            workspace_base: &team_dir,
+            member_dir_name: MEMBER_DIR,
+            team_name: TEAM_NAME,
+            projects: &project_refs,
+            github_repo: None,
+            project_number: None,
+            push: false,
+            coding_agent: &coding_agent,
+            remote_ops: None,
+            team_submodule_url: None,
+        };
+
+        workspace::create_workspace_repo(&params).unwrap();
+
+        let ws = team_dir.join(MEMBER_DIR);
         assert!(ws.join(".botminter.workspace").exists());
         assert!(ws.join("ralph.yml").exists());
+
+        workspace::inject_robot_enabled(&ws.join("ralph.yml"), true).unwrap();
     }
 }
 
@@ -122,37 +176,62 @@ fn start_and_verify_fn(
     _gh_token: String,
 ) -> impl Fn(&mut TestEnv) + Send + std::panic::UnwindSafe + std::panic::RefUnwindSafe + 'static {
     move |env| {
-        // Remove brain-prompt.md so bm start uses ralph (the stub) instead of
-        // bm brain-run. Brain mode is tested separately in exploratory tests.
-        let ws = env.home.join("workspaces").join(TEAM_NAME).join(MEMBER_DIR);
-        let _ = fs::remove_file(ws.join("brain-prompt.md"));
+        // Snapshot existing session workspaces before start (for deduplication in wait below)
+        let before: std::collections::HashSet<_> = list_session_workspaces(
+            &env.home, TEAM_NAME, MEMBER_DIR,
+        ).into_iter().collect();
 
         let mut guard = ProcessGuard::new(env, TEAM_NAME);
         let mut cmd = env.command("bm");
         cmd.args(["start", "-t", TEAM_NAME]);
         if let Some(url) = env.get_export("tg_mock_url") {
-            cmd.env("RALPH_TELEGRAM_API_URL", url)
+            cmd.env("RALPH_TELEGRAM_API_URL", &url)
                 .env("RALPH_TELEGRAM_BOT_TOKEN", BOT_TOKEN);
         }
         let stdout = cmd.run();
-        assert!(stdout.contains("Started 1 member"));
+        assert!(stdout.contains("Started 1 member"), "bm start output: {}", stdout);
 
-        if let Some(pid) = read_pid_from_state(&env.home) { guard.set_pid(pid); }
+        // Find the ephemeral session workspace the daemon created for this start.
+        // The workspace lives at ~/.botminter/sessions/<team>/<member>/<session_id>/
+        let session_ws = wait_for_new_session_workspace(
+            &env.home, TEAM_NAME, MEMBER_DIR, &before,
+            Duration::from_secs(15),
+        ).expect("session workspace should appear after bm start");
 
-        // Verify Telegram env vars in stub ralph
+        // Wait for stub-ralph to write its PID file into the session workspace
+        let pid = wait_for_stub_pid(&session_ws, Duration::from_secs(10))
+            .expect("stub-ralph should write .ralph-stub-pid after starting");
+        guard.set_pid(pid);
+
+        // Verify Telegram env vars captured by stub-ralph in the session workspace
         if env.get_export("tg_mock_url").is_some() {
-            std::thread::sleep(Duration::from_secs(3));
-            let ws = env.home.join("workspaces").join(TEAM_NAME).join(MEMBER_DIR);
-            let env_content = fs::read_to_string(ws.join(".ralph-stub-env")).unwrap();
-            assert!(env_content.contains("RALPH_TELEGRAM_API_URL="),
-                "stub env should contain RALPH_TELEGRAM_API_URL");
-            assert!(env_content.contains(&format!("RALPH_TELEGRAM_BOT_TOKEN={}", BOT_TOKEN)),
-                "stub env should contain RALPH_TELEGRAM_BOT_TOKEN");
-            assert!(env_content.contains("GH_CONFIG_DIR="),
-                "stub env should contain GH_CONFIG_DIR (App credential path)");
-            let tg_response = fs::read_to_string(ws.join(".ralph-stub-tg-response")).unwrap();
-            assert!(tg_response.contains("ok"),
-                "stub should have received ok from tg-mock");
+            // stub-ralph.sh polls for .ralph-stub-ignore-sigterm for up to 5 s before writing
+            // .ralph-stub-env — poll for the file rather than sleeping a fixed duration
+            let env_file = session_ws.join(".ralph-stub-env");
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while !env_file.exists() && std::time::Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            let env_content = fs::read_to_string(&env_file)
+                .expect(".ralph-stub-env must exist in session workspace");
+            assert!(
+                env_content.contains("RALPH_TELEGRAM_API_URL="),
+                "stub env should contain RALPH_TELEGRAM_API_URL:\n{}", env_content
+            );
+            assert!(
+                env_content.contains(&format!("RALPH_TELEGRAM_BOT_TOKEN={}", BOT_TOKEN)),
+                "stub env should contain RALPH_TELEGRAM_BOT_TOKEN:\n{}", env_content
+            );
+            assert!(
+                env_content.contains("GH_CONFIG_DIR="),
+                "stub env should contain GH_CONFIG_DIR (App credential path):\n{}", env_content
+            );
+            let tg_response = fs::read_to_string(session_ws.join(".ralph-stub-tg-response"))
+                .expect(".ralph-stub-tg-response must exist in session workspace");
+            assert!(
+                tg_response.contains("ok"),
+                "stub should have received ok from tg-mock: {}", tg_response
+            );
         }
 
         std::mem::forget(guard);
@@ -161,13 +240,16 @@ fn start_and_verify_fn(
 
 fn stop_fn() -> impl Fn(&mut TestEnv) + Send + std::panic::UnwindSafe + std::panic::RefUnwindSafe + 'static {
     move |env| {
-        let pid_before = read_pid_from_state(&env.home);
+        // Read stub PID from the session workspace before stopping so we can wait for exit
+        let pid_before = find_session_workspace(&env.home, TEAM_NAME, MEMBER_DIR)
+            .and_then(|ws| read_stub_pid(&ws));
+
         let stdout = env.command("bm")
             .args(["stop", "-t", TEAM_NAME])
             .run();
-        assert!(stdout.contains("Stopped 1 member"));
+        assert!(stdout.contains("Stopped 1 member"), "bm stop output: {}", stdout);
         if let Some(pid) = pid_before {
-            super::super::helpers::wait_for_exit(pid, Duration::from_secs(5));
+            wait_for_exit(pid, Duration::from_secs(5));
         }
     }
 }
@@ -217,7 +299,7 @@ fn build_suite(gh_org: String, gh_token: String, config: &E2eConfig) -> GithubSu
         .case("01_init_with_tg_bridge", init_with_tg_bridge_fn(gh_org.clone(), gh_token.clone()))
         .case("02_hire_member", hire_member_fn(gh_token.clone(), app_id.clone(), app_client_id.clone(), app_installation_id.clone(), app_private_key_file.clone()))
         .case("03_bridge_identity_add", bridge_identity_add_fn(gh_token.clone()))
-        .case("04_sync_bridge_and_repos", sync_bridge_and_repos_fn(gh_token.clone()))
+        .case("04_provision_workspace", provision_workspace_fn(gh_token.clone()))
         .case("05_start_and_verify", start_and_verify_fn(gh_token.clone()))
         .case("06_stop", stop_fn())
         // ── Cleanup ──────────────────────────────────────────────────

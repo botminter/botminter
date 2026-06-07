@@ -177,6 +177,7 @@ ensure_gh_token() {
 
 bm_hire() {
     bm hire "$@" \
+        -t "$TEAM" \
         --reuse-app \
         --app-id "$TESTS_APP_ID" \
         --client-id "$TESTS_APP_CLIENT_ID" \

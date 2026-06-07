@@ -10,15 +10,15 @@ pub mod stop_members;
 pub use self::init::{register_team, setup_new_team_repo};
 pub use self::local::create_local_formation;
 // Low-level process spawners — internal to the formation module.
-// The public entry point for member launch is `start_local_members`.
-pub(crate) use self::launch::{
-    check_robot_enabled_mismatch, is_brain_member, launch_brain, reap_child, BrainLaunchConfig,
-    launch_ralph,
-};
+pub(crate) use self::launch::{launch_brain, launch_ralph, BrainLaunchConfig};
+// Test-only diagnostic helpers (permanent workspace path removed — tests still assert behavior).
+pub(crate) use self::launch::is_brain_member;
+#[cfg(test)]
+pub(crate) use self::launch::check_robot_enabled_mismatch;
 pub use self::local_topology::write_local_topology;
 pub use self::manager::{run_formation_manager, FormationManagerResult};
 pub use self::start_members::{
-    auto_start_bridge, start_local_members, AppCredentialsCached, BridgeAutoStartOutcome,
+    auto_start_bridge, BridgeAutoStartOutcome,
     MemberLaunched, MemberSkipped, StartResult,
 };
 pub use self::stop_members::{
@@ -120,7 +120,7 @@ pub trait Formation {
 /// Key conventions are composed by each credential domain:
 /// - Bridge: `{member}` → bridge token
 /// - GitHubApp: `{member}/github-app-id`, `{member}/github-app-private-key`, etc.
-pub trait KeyValueCredentialStore {
+pub trait KeyValueCredentialStore: Send + Sync {
     /// Store a secret value under the given key.
     fn store(&self, key: &str, value: &str) -> Result<()>;
 

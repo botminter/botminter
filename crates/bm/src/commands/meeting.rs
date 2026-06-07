@@ -1,10 +1,53 @@
 use std::ffi::OsString;
+use std::path::PathBuf;
+#[cfg(test)]
+use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 use crate::chat;
 use crate::config;
+use crate::daemon::{self, DaemonClient};
+use crate::daemon::sessions_api::{StartSessionRequest, StartSessionResponse, StopSessionResponse};
 use crate::profile::Meeting;
+
+/// Trait for session lifecycle operations — injected in tests to verify start/stop calls.
+pub trait SessionLifecycleTrait {
+    fn start_session(&self, req: &StartSessionRequest) -> Result<StartSessionResponse>;
+    fn stop_session(&self, session_id: &str, force: bool) -> Result<StopSessionResponse>;
+}
+
+/// Testable inner function — calls start_session/stop_session and returns (exit_code, workspace_path).
+#[cfg(test)]
+pub(crate) fn run_meeting_with_client<C: SessionLifecycleTrait>(
+    _meeting: &Meeting,
+    member: &str,
+    _team_path: &Path,
+    client: &C,
+) -> Result<(i32, PathBuf)> {
+    let req = StartSessionRequest {
+        member_name: member.to_string(),
+        session_type: "Interactive".to_string(),
+        work_item_id: None,
+    };
+    let resp = client.start_session(&req)?;
+    if !resp.ok {
+        bail!(
+            "Failed to start session for '{}': {}",
+            member,
+            resp.error.as_deref().unwrap_or("unknown error")
+        );
+    }
+    let session_id = resp.session_id.context("daemon returned no session_id")?;
+    let workspace_path = PathBuf::from(
+        resp.workspace_path
+            .context("daemon returned no workspace_path")?,
+    );
+
+    let _ = client.stop_session(&session_id, false);
+
+    Ok((0, workspace_path))
+}
 
 /// Leak a String into a &'static str. Used for dynamic Clap subcommand names
 /// which require 'static lifetimes. Acceptable for a CLI process that runs once.
@@ -60,13 +103,52 @@ pub fn run_meeting(meeting: &Meeting, matches: &clap::ArgMatches) -> Result<()> 
         meeting.prompt.as_deref(),
         user_input.as_deref(),
     );
-    let session = chat::prepare_meeting_session(
-        &team.path,
-        &member,
-        &meeting.instructions,
-    )?;
 
-    chat::launch_session(&session, team, &team_repo, &member, initial_prompt.as_deref(), autonomous)
+    // Ensure daemon is running, auto-starting if needed
+    let client = match DaemonClient::connect(&team.name) {
+        Ok(c) => c,
+        Err(_) => {
+            eprintln!("Starting daemon for team '{}'...", team.name);
+            let mode = if team.daemon.polling { "poll" } else { "webhook" };
+            daemon::start_daemon(
+                &team.name,
+                &team_repo,
+                mode,
+                0,
+                team.daemon.interval,
+                "127.0.0.1",
+                "info",
+            )?;
+            DaemonClient::connect(&team.name)?
+        }
+    };
+
+    let req = StartSessionRequest {
+        member_name: member.to_string(),
+        session_type: "Interactive".to_string(),
+        work_item_id: None,
+    };
+    let resp = client.start_session(&req)?;
+    if !resp.ok {
+        bail!(
+            "Failed to start meeting session for '{}': {}",
+            member,
+            resp.error.as_deref().unwrap_or("unknown error")
+        );
+    }
+    let session_id = resp.session_id.context("daemon returned no session_id")?;
+    let workspace_path_str = resp
+        .workspace_path
+        .context("daemon returned no workspace_path — is workspace hydration configured?")?;
+    let workspace_path = PathBuf::from(&workspace_path_str);
+
+    let session = chat::prepare_meeting_session_from_path(&workspace_path, &meeting.instructions)?;
+
+    let exit_code = chat::launch_session(&session, team, &team_repo, &member, initial_prompt.as_deref(), autonomous)?;
+
+    let _ = client.stop_session(&session_id, false);
+
+    std::process::exit(exit_code);
 }
 
 /// Handle `External(Vec<OsString>)` — unknown subcommands.
@@ -81,6 +163,106 @@ pub fn run_external(args: Vec<OsString>) -> Result<()> {
          Run `bm --help` to see available commands.",
         cmd_name
     );
+}
+
+/// Session lifecycle unit tests — verify that run_meeting_with_client wires the daemon.
+#[cfg(test)]
+mod session_lifecycle_tests {
+    use std::cell::Cell;
+    use std::path::PathBuf;
+
+    use super::{run_meeting_with_client, SessionLifecycleTrait};
+    use crate::daemon::sessions_api::{StartSessionRequest, StartSessionResponse, StopSessionResponse};
+    use crate::profile::Meeting;
+
+    struct FakeSessionClient {
+        start_called: Cell<bool>,
+        stop_called: Cell<bool>,
+        ephemeral_ws: String,
+    }
+
+    impl FakeSessionClient {
+        fn new(ephemeral_ws: &str) -> Self {
+            Self {
+                start_called: Cell::new(false),
+                stop_called: Cell::new(false),
+                ephemeral_ws: ephemeral_ws.to_string(),
+            }
+        }
+    }
+
+    impl SessionLifecycleTrait for FakeSessionClient {
+        fn start_session(&self, _req: &StartSessionRequest) -> anyhow::Result<StartSessionResponse> {
+            self.start_called.set(true);
+            Ok(StartSessionResponse {
+                ok: true,
+                session_id: Some("fake-session-abc".to_string()),
+                workspace_path: Some(self.ephemeral_ws.clone()),
+                error: None,
+            })
+        }
+
+        fn stop_session(&self, _session_id: &str, _force: bool) -> anyhow::Result<StopSessionResponse> {
+            self.stop_called.set(true);
+            Ok(StopSessionResponse { ok: true, error: None })
+        }
+    }
+
+    fn test_meeting() -> Meeting {
+        Meeting {
+            name: "planning".into(),
+            description: "Planning meeting".into(),
+            member: "engineer".into(),
+            instructions: "You are an engineer in a planning meeting.\n".into(),
+            prompt: None,
+        }
+    }
+
+    #[test]
+    fn meeting_calls_start_session() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fake = FakeSessionClient::new("/ephemeral/sessions/fake-abc");
+        let meeting = test_meeting();
+
+        run_meeting_with_client(&meeting, "engineer-carol", tmp.path(), &fake).unwrap();
+
+        assert!(
+            fake.start_called.get(),
+            "run_meeting must call start_session on the daemon to create an ephemeral session"
+        );
+    }
+
+    #[test]
+    fn meeting_uses_ephemeral_workspace_from_daemon() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ephemeral_ws = "/ephemeral/sessions/fake-abc";
+        let fake = FakeSessionClient::new(ephemeral_ws);
+        let meeting = test_meeting();
+
+        let (_exit_code, ws_path) =
+            run_meeting_with_client(&meeting, "engineer-carol", tmp.path(), &fake).unwrap();
+
+        assert_eq!(
+            ws_path,
+            PathBuf::from(ephemeral_ws),
+            "workspace path must be the ephemeral path from daemon start_session, \
+             not the permanent workspace at team_path/member"
+        );
+    }
+
+    #[test]
+    fn meeting_stop_session_called_on_exit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fake = FakeSessionClient::new("/ephemeral/sessions/fake-abc");
+        let meeting = test_meeting();
+
+        run_meeting_with_client(&meeting, "engineer-carol", tmp.path(), &fake).unwrap();
+
+        assert!(
+            fake.stop_called.get(),
+            "stop_session must be called when the meeting exits to trigger finalization"
+        );
+    }
 }
 
 #[cfg(test)]

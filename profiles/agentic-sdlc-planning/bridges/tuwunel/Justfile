@@ -720,7 +720,7 @@ room-create-dm member_name:
     CREATE_RESP=$(matrix_request POST "${MATRIX_URL}/_matrix/client/v3/createRoom" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-        -d "{\"name\":\"${DM_ROOM_NAME}\",\"room_alias_name\":\"${DM_ROOM_NAME}\",\"preset\":\"trusted_private_chat\",\"is_direct\":true,\"invite\":[\"${MEMBER_MXID}\"]}" \
+        -d "{\"name\":\"${DM_ROOM_NAME}\",\"room_alias_name\":\"${DM_ROOM_NAME}\",\"is_direct\":true,\"invite\":[\"${MEMBER_MXID}\"],\"initial_state\":[{\"type\":\"m.room.join_rules\",\"state_key\":\"\",\"content\":{\"join_rule\":\"invite\"}},{\"type\":\"m.room.history_visibility\",\"state_key\":\"\",\"content\":{\"history_visibility\":\"joined\"}},{\"type\":\"m.room.guest_access\",\"state_key\":\"\",\"content\":{\"guest_access\":\"forbidden\"}}]}" \
         )
 
     ROOM_ID=$(echo "$CREATE_RESP" | jq -r '.room_id')

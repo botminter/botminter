@@ -1,40 +1,6 @@
 # Launch Members
 
-This guide covers provisioning workspaces for team members and launching their Ralph instances.
-
-## Provision workspaces
-
-Before launching members, provision their workspaces:
-
-```bash
-bm teams sync
-```
-
-This creates or updates **workspace repos** for each hired member. Each workspace repo is a dedicated git repository containing submodules for the team repo and project forks.
-
-**New workspaces** (use `--repos` to create GitHub repos):
-
-```bash
-bm teams sync --repos
-```
-
-1. Creates a GitHub repo (`org/<team>-<member>`) for each member
-2. Clones locally into `workzone/<team>/<member>/`
-3. Adds the team repo as `team/` submodule
-4. Adds each assigned project as `projects/<project>/` submodule
-5. Checks out member branches in all submodules
-6. Copies context files (CLAUDE.md, PROMPT.md, ralph.yml) from `team/members/<member>/`
-7. Assembles `.claude/agents/` with symlinks into `team/` submodule paths
-8. Writes `.botminter.workspace` marker and `.gitignore`
-9. Commits and pushes
-
-**Existing workspaces** (without `--repos`):
-
-```bash
-bm teams sync
-```
-
-Updates submodules to latest, re-copies context files if team submodule versions are newer, and re-assembles agent dir symlinks.
+This guide covers launching team member sessions and managing their lifecycle.
 
 ## Launch all members
 
@@ -42,7 +8,7 @@ Updates submodules to latest, re-copies context files if team submodule versions
 bm start
 ```
 
-This discovers all member workspaces (via `.botminter.workspace` marker files), maps credentials from the config, and launches each member as a background process. Members with a `brain-prompt.md` file in their workspace run in **brain mode** (chat-first) — an ACP-based multiplexer that monitors loops, responds on the bridge, and picks up work autonomously. Standard members launch `ralph run -p PROMPT.md` directly. A `.topology` file is written to the team directory tracking member endpoints.
+This creates ephemeral session workspaces for each hired member, assembles configuration files from the team repo, and launches each member as a background process. Members with a `brain-prompt.md` file run in **brain mode** (chat-first) — an ACP-based multiplexer that monitors loops, responds on the bridge, and picks up work autonomously. Standard members launch `ralph run -p PROMPT.md` directly. A `.topology` file is written to the team directory tracking member endpoints.
 
 The `bm up` alias also works:
 
@@ -67,23 +33,29 @@ Non-local formations (e.g., `k8s`) require a configured formation manager in the
 bm status
 ```
 
-This shows the member table (name, role, status, branch, PID), the formation type from the topology file, and daemon status if a daemon is running.
+This shows active sessions (member name, role, session state, elapsed time) and daemon status.
 
-Add `-v` for verbose output including per-member submodule status and Ralph runtime details:
+Add `-v` for verbose output including per-session workspace paths and Ralph runtime details:
 
 ```bash
 bm status -v
 ```
 
+View completed session history:
+
+```bash
+bm status --history
+```
+
 ## Stop members
 
-Graceful stop (waits up to 60 seconds):
+Graceful stop (triggers finalization for uncommitted work):
 
 ```bash
 bm stop
 ```
 
-Force stop (sends SIGTERM immediately):
+Force stop (skips finalization):
 
 ```bash
 bm stop --force
@@ -109,28 +81,15 @@ bm daemon stop
 
 The daemon filters for `issues`, `issue_comment`, and `pull_request` events. When an event arrives, it discovers members, spawns them one-shot, waits for completion, and cleans up. Each member's output is written to a separate log file at `~/.botminter/logs/member-{team}-{member}.log`. See [CLI Reference — Daemon](../reference/cli.md#daemon) for full options and [Daemon Operations](../reference/daemon-operations.md) for architecture, debugging, and troubleshooting.
 
-## Re-sync after changes
+## Configuration propagation
 
-If team configuration has changed (new knowledge, updated prompts, modified `ralph.yml`), re-sync workspaces:
-
-```bash
-bm teams sync
-```
-
-??? note "What sync updates"
-    | What | How |
-    |------|-----|
-    | Submodules (`team/`, `projects/`) | `git submodule update --remote` |
-    | `CLAUDE.md`, `PROMPT.md` | Re-copy if team submodule version is newer |
-    | `ralph.yml` | Re-copy if team submodule version is newer |
-    | `settings.local.json` | Re-copy if present |
-    | `.claude/agents/` | Re-assemble symlinks into `team/` submodule paths |
-
-After syncing, restart agents for `ralph.yml` changes to take effect:
+When team configuration changes (new knowledge, updated prompts, modified `ralph.yml`), changes take effect automatically on the next session start. Stop current sessions and start new ones:
 
 ```bash
 bm stop && bm start
 ```
+
+Each new session assembles fresh configuration from the latest team repo state — no manual synchronization step is needed.
 
 ## Launch for a specific team
 
@@ -144,21 +103,15 @@ bm stop -t my-other-team
 
 ## Troubleshooting
 
-**"No workspaces found"**
-: Run `bm teams sync` first to provision workspaces.
-
 **"Member not found"**
 : Run `bm hire <role>` first to add a member.
 
 **Changes to `ralph.yml` not taking effect**
-: Run `bm teams sync` and restart agents with `bm stop && bm start`. `ralph.yml` is a copy, not a symlink.
-
-**Symlinks broken after moving directories**
-: Run `bm teams sync` to repair.
+: Stop current sessions with `bm stop` and start new ones with `bm start`. Configuration is assembled fresh each session.
 
 ## Related topics
 
 - [Manage Members](manage-members.md) — hiring and configuring members
-- [Workspace Model](../concepts/workspace-model.md) — workspace layout and file surfacing
+- [Workspace Model](../concepts/workspace-model.md) — session workspace layout and lifecycle
 - [CLI Reference](../reference/cli.md) — full command documentation
 - [Configuration Files](../reference/configuration.md) — daemon config, formation config, and topology file

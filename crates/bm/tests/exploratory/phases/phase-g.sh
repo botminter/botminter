@@ -30,7 +30,7 @@ pass "G5" "Removed local state"
 
 # Clear keyring (use isolated keyring if available)
 if load_isolated_keyring; then
-    for u in superman-alice superman-bob superman-carol superman-dave bmadmin superman-pre-existing; do
+    for u in engineer-alice engineer-bob engineer-carol engineer-pre-existing bmadmin; do
         secret_tool clear service "botminter.$TEAM.tuwunel" username "$u" 2>/dev/null || true
     done
     pass "G6" "Cleared keyring entries"

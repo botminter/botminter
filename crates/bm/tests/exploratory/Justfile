@@ -1,4 +1,4 @@
-# Exploratory test execution recipes for sync, bridge & brain lifecycle
+# Exploratory test execution recipes for session lifecycle, bridge & brain lifecycle
 # Usage: just -f crates/bm/tests/exploratory/Justfile <phase>
 # Full run: just -f crates/bm/tests/exploratory/Justfile all
 #
@@ -35,7 +35,9 @@ TEAM := "exploratory-test"
 ORG := "devguyio-bot-squad"
 REPO := "exploratory-test-team"
 FULL_REPO := ORG + "/" + REPO
-PROFILE := "agentic-sdlc-minimal"
+PROJECT_REPO := "exploratory-test-project"
+FULL_PROJECT_REPO := ORG + "/" + PROJECT_REPO
+PROFILE := "agentic-sdlc-planning"
 BOARD := "Exploratory Test Board"
 TUWUNEL_PORT := env("TUWUNEL_PORT", "8008")
 
@@ -80,15 +82,17 @@ clean:
         if [ -x {{REMOTE_BIN}}/bm ] && [ -f {{REMOTE_HOME}}/.botminter/config.yml ]; then
             {{REMOTE_BIN}}/bm stop --force --bridge -t $TEAM 2>/dev/null || true
         fi
-        # 2. SIGTERM stale processes (including bm commands from killed test runs)
-        for pattern in \"[b]m brain-run\" \"[b]m daemon\" \"[b]m start\" \"[b]m teams\" \"[b]m stop\" \"[c]laude-code-acp-rs\" \"[c]laude.*stream-json\" \"[r]alph run\"; do
+        # 2. SIGTERM stale bm/ralph/claude processes.
+        # Use [x]yz patterns to avoid matching the grep command itself or
+        # the bash -l -c "..." shell whose cmdline contains the pattern string.
+        for pattern in \"[b]m brain-run\" \"[b]m daemon-run\" \"[b]m daemon\" \"[b]m start\" \"[c]laude-agent-acp\" \"[c]laude.*stream-json\" \"[r]alph loop\" \"[r]alph run\" \"[s]tub-bin/ralph\"; do
             for pid in \$(ps aux | grep \"\$pattern\" | awk \"{print \\\$2}\"); do
                 kill \"\$pid\" 2>/dev/null || true
             done
         done
-        sleep 1
+        sleep 2
         # 3. SIGKILL survivors
-        for pattern in \"[b]m brain-run\" \"[b]m daemon\" \"[b]m start\" \"[b]m teams\" \"[b]m stop\" \"[c]laude-code-acp-rs\" \"[c]laude.*stream-json\" \"[r]alph run\"; do
+        for pattern in \"[b]m brain-run\" \"[b]m daemon-run\" \"[b]m daemon\" \"[c]laude-agent-acp\" \"[r]alph loop\" \"[r]alph run\" \"[s]tub-bin/ralph\"; do
             for pid in \$(ps aux | grep \"\$pattern\" | awk \"{print \\\$2}\"); do
                 kill -9 \"\$pid\" 2>/dev/null || true
             done
@@ -100,12 +104,13 @@ clean:
 
         # ── GitHub ──
         gh repo delete $FULL_REPO --yes 2>/dev/null || true
+        gh repo delete $FULL_PROJECT_REPO --yes 2>/dev/null || true
         PROJ_NUM=\$(gh project list --owner $ORG --format json 2>/dev/null | jq -r \".projects[] | select(.title==\\\"$BOARD\\\") | .number\" 2>/dev/null)
         [ -n \"\$PROJ_NUM\" ] && gh project delete \"\$PROJ_NUM\" --owner $ORG --format json 2>/dev/null || true
 
         # ── Keyring ──
         if type load_isolated_keyring &>/dev/null && load_isolated_keyring; then
-            for u in superman-alice superman-bob superman-carol superman-dave bmadmin superman-pre-existing; do
+            for u in engineer-alice engineer-bob engineer-carol engineer-pre-existing bmadmin; do
                 secret_tool clear service botminter.$TEAM.tuwunel username \$u 2>/dev/null || true
             done
             stop_isolated_keyring 2>/dev/null || true
@@ -113,7 +118,9 @@ clean:
 
         # ── Local state ──
         rm -rf ~/.botminter ~/.config/botminter 2>/dev/null || true
-        rm -f {{REMOTE_BIN}}/bm {{REMOTE_BIN}}/bm-agent {{REMOTE_BIN}}/ralph {{REMOTE_BIN}}/claude {{REMOTE_BIN}}/claude-code-acp-rs
+        rm -f {{REMOTE_BIN}}/bm {{REMOTE_BIN}}/bm-agent {{REMOTE_BIN}}/ralph {{REMOTE_BIN}}/claude
+        # claude-agent-acp is deployed (not pre-installed); remove if present
+        rm -f {{REMOTE_BIN}}/claude-agent-acp
 
         # ── Port wait ──
         # Kill any conmon process holding the port (podman rm may not release immediately)
@@ -143,14 +150,55 @@ deploy: build clean
     # Copy binaries (bm + bm-agent from build, others from operator's PATH)
     scp -q {{CARGO_ROOT}}/target/debug/bm {{TEST_HOST}}:{{REMOTE_BIN}}/bm
     scp -q {{CARGO_ROOT}}/target/debug/bm-agent {{TEST_HOST}}:{{REMOTE_BIN}}/bm-agent
-    # Deploy ralph and claude from operator's PATH
+    # Deploy ralph and claude from operator's PATH (optional — skipped if not found)
+    # claude-agent-acp is NOT copied from operator — operator's pnpm shim hardcodes operator's home paths
+    # bm-test-user regenerates claude-agent-acp from their own pnpm store below
     for bin in ralph claude; do
         LOCAL_BIN=$(which "$bin" 2>/dev/null || true)
         if [ -n "$LOCAL_BIN" ]; then
             scp -q "$LOCAL_BIN" {{TEST_HOST}}:{{REMOTE_BIN}}/"$bin"
         fi
     done
-    # claude-agent-acp is pre-installed on the test user via pnpm
+    # Install pnpm and claude-agent-acp in bm-test-user home before generating wrapper.
+    # Tests must deploy their own deps — never assume pre-installed state.
+    ssh {{TEST_HOST}} bash -s << 'INSTALL_ACP'
+    set -euo pipefail
+    # Always set PNPM_HOME first so it resolves to bm-test-user's own home,
+    # and add it to PATH before checking if pnpm is available.
+    export PNPM_HOME="$HOME/.local/share/pnpm"
+    export PATH="$PNPM_HOME:$PATH"
+    # Install pnpm if not present even after PATH update
+    if ! command -v pnpm >/dev/null 2>&1; then
+        echo "  Installing pnpm for bm-test-user..."
+        curl -fsSL https://get.pnpm.io/install.sh | PNPM_HOME="$PNPM_HOME" sh -
+        export PATH="$PNPM_HOME:$PATH"
+    fi
+    # Ensure node is installed via pnpm
+    pnpm env use --global lts 2>/dev/null || true
+    # Install claude-agent-acp (idempotent)
+    pnpm install -g @agentclientprotocol/claude-agent-acp
+    echo "  ✓ claude-agent-acp installed via bm-test-user pnpm"
+    INSTALL_ACP
+    # Regenerate claude-agent-acp wrapper using bm-test-user's own pnpm and node.
+    # bm-test-user has @agentclientprotocol/claude-agent-acp in their own pnpm store at
+    # ~/.local/share/pnpm/ — use their own node and their own package paths.
+    ssh {{TEST_HOST}} bash -s << 'REGEN_ACP'
+    set -euo pipefail
+    PNPM_DIR=$HOME/.local/share/pnpm
+    ACP_PKG=$(ls $PNPM_DIR/global/5/.pnpm/ 2>/dev/null | grep '^@agentclientprotocol+claude-agent-acp@' | sort -V | tail -1 || true)
+    [ -z "$ACP_PKG" ] && { echo 'ERROR: claude-agent-acp not in bm-test-user pnpm store' >&2; exit 1; }
+    ACP_VERSION=${ACP_PKG#@agentclientprotocol+claude-agent-acp@}
+    NODE_VERSION=$(ls $PNPM_DIR/nodejs/ 2>/dev/null | sort -V | tail -1 || true)
+    NODE_BIN=$PNPM_DIR/nodejs/${NODE_VERSION}/bin/node
+    ACP_INDEX=$PNPM_DIR/global/5/.pnpm/@agentclientprotocol+claude-agent-acp@${ACP_VERSION}/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js
+    NP1=$PNPM_DIR/global/5/.pnpm/@agentclientprotocol+claude-agent-acp@${ACP_VERSION}/node_modules/@agentclientprotocol/claude-agent-acp/node_modules
+    NP2=$PNPM_DIR/global/5/.pnpm/@agentclientprotocol+claude-agent-acp@${ACP_VERSION}/node_modules
+    NP3=$PNPM_DIR/global/5/.pnpm/node_modules
+    mkdir -p $HOME/.local/bin
+    printf '#!/bin/sh\nif [ -z "$NODE_PATH" ]; then\n  export NODE_PATH="%s:%s:%s"\nelse\n  export NODE_PATH="%s:%s:%s:$NODE_PATH"\nfi\n"%s" "%s" "$@"\nexit $?\n' $NP1 $NP2 $NP3 $NP1 $NP2 $NP3 $NODE_BIN $ACP_INDEX > $HOME/.local/bin/claude-agent-acp
+    chmod +x $HOME/.local/bin/claude-agent-acp
+    echo '  ✓ claude-agent-acp wrapper regenerated using bm-test-user own pnpm'
+    REGEN_ACP
     # Deploy GitHub App PEM file to the remote test user
     scp -q "{{TESTS_APP_PRIVATE_KEY_FILE}}" {{TEST_HOST}}:~/.config/github-apps/bm-test-app.pem
     # Copy test scripts
@@ -170,6 +218,12 @@ deploy: build clean
     # Pipe the token via stdin to avoid exposing it in process args.
     # setup-git wires the credential helper so git push uses gh for HTTPS auth.
     echo "$TESTS_GH_TOKEN" | ssh {{TEST_HOST}} 'gh auth login --with-token && gh auth setup-git'
+    # Read Vertex AI vars from operator shell — forwarded to bm-test-user env.sh so
+    # bm brain-run's collect_env_vars() can pass them to the claude-agent-acp child process.
+    VERTEX_PROJECT="${ANTHROPIC_VERTEX_PROJECT_ID:-}"
+    VERTEX_ENABLED="${CLAUDE_CODE_USE_VERTEX:-}"
+    VERTEX_REGION="${CLOUD_ML_REGION:-}"
+    REMOTE_GCP_CREDS="{{REMOTE_HOME}}/.config/gcloud/application_default_credentials.json"
     # Generate env.sh on the remote — sourced by run-phase before each phase
     printf '%s\n' \
         'export BM="{{REMOTE_BIN}}/bm"' \
@@ -178,6 +232,8 @@ deploy: build clean
         'export ORG="{{ORG}}"' \
         'export REPO="{{REPO}}"' \
         'export FULL_REPO="{{FULL_REPO}}"' \
+        'export PROJECT_REPO="{{PROJECT_REPO}}"' \
+        'export FULL_PROJECT_REPO="{{FULL_PROJECT_REPO}}"' \
         'export PROFILE="{{PROFILE}}"' \
         'export BOARD="{{BOARD}}"' \
         'export TEAM_DIR="{{REMOTE_TEAM_DIR}}"' \
@@ -191,6 +247,10 @@ deploy: build clean
         'export TESTS_APP_INSTALLATION_ID="{{TESTS_APP_INSTALLATION_ID}}"' \
         "export TESTS_APP_PRIVATE_KEY_FILE=\"{{REMOTE_HOME}}/.config/github-apps/bm-test-app.pem\"" \
         'export PATH="{{REMOTE_BIN}}:$PATH"' \
+        "export CLAUDE_CODE_USE_VERTEX=\"${VERTEX_ENABLED}\"" \
+        "export ANTHROPIC_VERTEX_PROJECT_ID=\"${VERTEX_PROJECT}\"" \
+        "export CLOUD_ML_REGION=\"${VERTEX_REGION}\"" \
+        "export GOOGLE_APPLICATION_CREDENTIALS=\"${REMOTE_GCP_CREDS}\"" \
         | ssh {{TEST_HOST}} 'cat > {{REMOTE_ENV}}'
     echo "Deploy complete."
 
@@ -270,7 +330,7 @@ phase-b: ensure-keyring (run-phase "phase-b.sh")
 
 phase-c: ensure-keyring (run-phase "phase-c.sh")
 
-phase-d: ensure-keyring (run-phase "phase-d.sh")
+phase-d-session: ensure-keyring (run-phase "phase-d-session.sh" "900")
 
 phase-e: ensure-keyring (run-phase "phase-e.sh")
 
@@ -280,14 +340,11 @@ phase-g: (run-phase "phase-g.sh")
 
 phase-h: ensure-keyring (run-phase "phase-h.sh" "1200")
 
-# Isolated ACP diagnostic test (requires team to exist — run after phase-e)
-phase-acp-isolated: ensure-keyring (run-phase "phase-acp-isolated.sh" "600")
-
 # ─── Orchestration ─────────────────────────────────────────────
 
 # Run all phases (B through H)
 # Starts and ends with clean to ensure a known-good state.
-all: clean deploy preflight init-report phase-b phase-c phase-d phase-e phase-f phase-h phase-g fetch-report clean
+all: clean deploy preflight init-report phase-b phase-c phase-d-session phase-e phase-f phase-h phase-g fetch-report clean
 
 # Run only bridge + workspace phases (skip init, assume team exists)
-bridge-and-workspace: ensure-keyring phase-c phase-d phase-e
+bridge-and-workspace: ensure-keyring phase-c phase-d-session phase-e

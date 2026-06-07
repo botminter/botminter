@@ -2,12 +2,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::config;
+use crate::daemon::sessions_api::SessionsApiState;
 
 /// Shared state for the console web API handlers.
 #[derive(Clone)]
 pub struct WebState {
     /// Path to the botminter config file (e.g., ~/.botminter/config.yml).
     pub config_path: Arc<PathBuf>,
+    /// In-memory sessions state from the daemon, for console operator visibility.
+    /// None when the web server runs without a live daemon (standalone mode or tests).
+    pub sessions_state: Option<SessionsApiState>,
 }
 
 impl WebState {

@@ -284,6 +284,7 @@ mod tests {
     fn test_app(config_path: std::path::PathBuf) -> axum::Router {
         let state = WebState {
             config_path: Arc::new(config_path),
+            sessions_state: None,
         };
         web_router(state)
     }
@@ -338,7 +339,7 @@ mod tests {
         let resp = app
             .oneshot(
                 Request::builder()
-                    .uri(&format!("/api/teams/{team_name}/overview"))
+                    .uri(format!("/api/teams/{team_name}/overview"))
                     .body(Body::empty())
                     .unwrap(),
             )

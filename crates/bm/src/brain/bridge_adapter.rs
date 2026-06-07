@@ -408,18 +408,35 @@ impl MatrixBridgeReader {
         }
     }
 
-    /// Persist the discovered DM room ID to a workspace file.
+    /// Persist the discovered DM room ID to the session workspace and the durable member-state path.
     fn persist_dm_room(&self, room_id: &str) {
+        let json = serde_json::json!({
+            "room_id": room_id,
+            "discovered_at": chrono::Utc::now().to_rfc3339(),
+        });
+        let json_str = serde_json::to_string_pretty(&json).unwrap_or_default();
+
         if let Some(ref workspace) = self.config.workspace {
             let dm_file = workspace.join("dm-room.json");
-            let json = serde_json::json!({
-                "room_id": room_id,
-                "discovered_at": chrono::Utc::now().to_rfc3339(),
-            });
-            if let Err(e) = std::fs::write(&dm_file, serde_json::to_string_pretty(&json).unwrap_or_default()) {
+            if let Err(e) = std::fs::write(&dm_file, &json_str) {
                 tracing::warn!(error = %e, "Failed to persist DM room ID to {}", dm_file.display());
             } else {
                 tracing::info!(path = %dm_file.display(), "Persisted DM room ID");
+            }
+        }
+
+        // Also write to durable member-state path so the room survives session restarts.
+        if let Ok(state_dir) = std::env::var("BM_MEMBER_STATE_DIR") {
+            let durable_file = std::path::PathBuf::from(&state_dir).join("dm-room.json");
+            if let Some(parent) = durable_file.parent() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    tracing::warn!(error = %e, "Failed to create durable state directory {}", parent.display());
+                }
+            }
+            if let Err(e) = std::fs::write(&durable_file, &json_str) {
+                tracing::warn!(error = %e, "Failed to persist DM room ID to durable path {}", durable_file.display());
+            } else {
+                tracing::info!(path = %durable_file.display(), "Persisted DM room ID to durable member state");
             }
         }
     }

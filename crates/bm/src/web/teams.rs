@@ -57,6 +57,7 @@ mod tests {
     fn test_app(config_path: std::path::PathBuf) -> axum::Router {
         let state = WebState {
             config_path: std::sync::Arc::new(config_path),
+            sessions_state: None,
         };
         web_router(state)
     }

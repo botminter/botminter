@@ -4,8 +4,13 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 
 use super::api::{
-    HealthResponse, MembersStatusResponse, StartLoopRequest, StartLoopResponse,
-    StartMembersRequest, StartMembersResponse, StopMembersRequest, StopMembersResponse,
+    HealthResponse, MembersStatusResponse, StopMembersRequest, StopMembersResponse,
+};
+use super::sessions_api::{
+    AcquireLockRequest, AcquireLockResponse, BulkCleanupRequest, BulkCleanupResponse,
+    CleanupSessionResponse, InspectSessionResponse, ReleaseLockResponse, RetriggerResponse,
+    SessionDetailResponse, SessionHistoryResponse, SessionListResponse, StartSessionRequest,
+    StartSessionResponse, StopBulkRequest, StopBulkResponse, StopSessionRequest, StopSessionResponse,
 };
 use super::config::{DaemonConfig, DaemonPaths};
 use crate::state;
@@ -54,26 +59,6 @@ impl DaemonClient {
         &self.base_url
     }
 
-    /// POST /api/members/start — launch team members.
-    pub fn start_members(&self, req: &StartMembersRequest) -> Result<StartMembersResponse> {
-        let url = format!("{}/api/members/start", self.base_url);
-        let resp = self
-            .client
-            .post(&url)
-            .json(req)
-            .send()
-            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().unwrap_or_default();
-            bail!("Daemon returned {} for start: {}", status, body);
-        }
-
-        resp.json::<StartMembersResponse>()
-            .context("Failed to parse start response")
-    }
-
     /// POST /api/members/stop — stop team members.
     pub fn stop_members(&self, req: &StopMembersRequest) -> Result<StopMembersResponse> {
         let url = format!("{}/api/members/stop", self.base_url);
@@ -113,9 +98,9 @@ impl DaemonClient {
             .context("Failed to parse members response")
     }
 
-    /// POST /api/loops/start — start a Ralph loop in a member's workspace.
-    pub fn start_loop(&self, req: &StartLoopRequest) -> Result<StartLoopResponse> {
-        let url = format!("{}/api/loops/start", self.base_url);
+    /// POST /api/sessions/start — create a new ephemeral session.
+    pub fn start_session(&self, req: &StartSessionRequest) -> Result<StartSessionResponse> {
+        let url = format!("{}/api/sessions/start", self.base_url);
         let resp = self
             .client
             .post(&url)
@@ -126,11 +111,226 @@ impl DaemonClient {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().unwrap_or_default();
-            bail!("Daemon returned {} for start loop: {}", status, body);
+            bail!("Daemon returned {} for start session: {}", status, body);
         }
 
-        resp.json::<StartLoopResponse>()
-            .context("Failed to parse start loop response")
+        resp.json::<StartSessionResponse>()
+            .context("Failed to parse start session response")
+    }
+
+    /// GET /api/sessions — list active sessions.
+    pub fn list_sessions(&self) -> Result<SessionListResponse> {
+        let url = format!("{}/api/sessions", self.base_url);
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            bail!("Daemon returned {} for list sessions: {}", status, body);
+        }
+
+        resp.json::<SessionListResponse>()
+            .context("Failed to parse list sessions response")
+    }
+
+    /// POST /api/sessions/{id}/stop — stop a specific session.
+    pub fn stop_session(&self, session_id: &str, force: bool) -> Result<StopSessionResponse> {
+        let url = format!("{}/api/sessions/{}/stop", self.base_url, session_id);
+        let mut req = self.client.post(&url);
+
+        if force {
+            req = req.json(&StopSessionRequest { force });
+        }
+
+        let resp = req
+            .send()
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            bail!("Daemon returned {} for stop session: {}", status, body);
+        }
+
+        resp.json::<StopSessionResponse>()
+            .context("Failed to parse stop session response")
+    }
+
+    /// POST /api/sessions/stop — bulk stop by member or autonomous mode.
+    pub fn stop_sessions_bulk(&self, req: &StopBulkRequest) -> Result<StopBulkResponse> {
+        let url = format!("{}/api/sessions/stop", self.base_url);
+        let resp = self
+            .client
+            .post(&url)
+            .json(req)
+            .send()
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            bail!("Daemon returned {} for bulk stop: {}", status, body);
+        }
+
+        resp.json::<StopBulkResponse>()
+            .context("Failed to parse bulk stop response")
+    }
+
+    /// POST /api/sessions/{id}/finalize — retrigger finalization on a retained session.
+    pub fn retrigger_finalization(&self, session_id: &str) -> Result<RetriggerResponse> {
+        let url = format!("{}/api/sessions/{}/finalize", self.base_url, session_id);
+        let resp = self
+            .client
+            .post(&url)
+            .send()
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            bail!(
+                "Daemon returned {} for retrigger finalization: {}",
+                status,
+                body
+            );
+        }
+
+        resp.json::<RetriggerResponse>()
+            .context("Failed to parse retrigger response")
+    }
+
+    /// GET /api/sessions/{id} — get session details.
+    pub fn get_session(&self, session_id: &str) -> Result<SessionDetailResponse> {
+        let url = format!("{}/api/sessions/{}", self.base_url, session_id);
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            bail!("Daemon returned {} for get session: {}", status, body);
+        }
+
+        resp.json::<SessionDetailResponse>()
+            .context("Failed to parse session detail response")
+    }
+
+    /// GET /api/sessions/{id}/inspect — inspect a session with finalization and git state.
+    pub fn inspect_session(&self, session_id: &str) -> Result<InspectSessionResponse> {
+        let url = format!("{}/api/sessions/{}/inspect", self.base_url, session_id);
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            bail!("Daemon returned {} for inspect session: {}", status, body);
+        }
+
+        resp.json::<InspectSessionResponse>()
+            .context("Failed to parse inspect session response")
+    }
+
+    /// DELETE /api/sessions/{id} — clean up a single retained session.
+    pub fn cleanup_session(&self, session_id: &str) -> Result<CleanupSessionResponse> {
+        let url = format!("{}/api/sessions/{}", self.base_url, session_id);
+        let resp = self
+            .client
+            .delete(&url)
+            .send()
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            bail!("Daemon returned {} for cleanup session: {}", status, body);
+        }
+
+        resp.json::<CleanupSessionResponse>()
+            .context("Failed to parse cleanup session response")
+    }
+
+    /// POST /api/sessions/cleanup — bulk cleanup of retained sessions.
+    pub fn bulk_cleanup_sessions(&self, req: &BulkCleanupRequest) -> Result<BulkCleanupResponse> {
+        let url = format!("{}/api/sessions/cleanup", self.base_url);
+        let resp = self
+            .client
+            .post(&url)
+            .json(req)
+            .send()
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            bail!("Daemon returned {} for bulk cleanup: {}", status, body);
+        }
+
+        resp.json::<BulkCleanupResponse>()
+            .context("Failed to parse bulk cleanup response")
+    }
+
+    /// GET /api/sessions/history — list session history.
+    pub fn list_session_history(&self) -> Result<SessionHistoryResponse> {
+        let url = format!("{}/api/sessions/history", self.base_url);
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            bail!("Daemon returned {} for session history: {}", status, body);
+        }
+
+        resp.json::<SessionHistoryResponse>()
+            .context("Failed to parse session history response")
+    }
+
+    /// POST /api/sessions/{id}/locks — acquire a work-item lock.
+    pub fn acquire_lock(&self, session_id: &str, work_item_id: &str) -> Result<AcquireLockResponse> {
+        let url = format!("{}/api/sessions/{}/locks", self.base_url, session_id);
+        let req_body = AcquireLockRequest { work_item_id: work_item_id.to_string() };
+        let resp = self
+            .client
+            .post(&url)
+            .json(&req_body)
+            .send()
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            bail!("Daemon returned {} for acquire lock: {}", status, body);
+        }
+        resp.json::<AcquireLockResponse>().context("Failed to parse acquire lock response")
+    }
+
+    /// DELETE /api/sessions/{id}/locks/{work_item_id} — release a work-item lock.
+    pub fn release_lock(&self, session_id: &str, work_item_id: &str) -> Result<ReleaseLockResponse> {
+        let url = format!("{}/api/sessions/{}/locks/{}", self.base_url, session_id, work_item_id);
+        let resp = self
+            .client
+            .delete(&url)
+            .send()
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().unwrap_or_default();
+            bail!("Daemon returned {} for release lock: {}", status, body);
+        }
+        resp.json::<ReleaseLockResponse>().context("Failed to parse release lock response")
     }
 
     /// GET /api/health — daemon health check.
@@ -171,9 +371,6 @@ fn load_daemon_config(paths: &DaemonPaths) -> Result<DaemonConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::daemon::api::{
-        MemberLaunchedInfo, MemberSkippedInfo, MemberStatusInfo, MemberStoppedInfo,
-    };
 
     #[test]
     fn load_daemon_config_missing_file() {
@@ -268,21 +465,6 @@ mod tests {
     }
 
     #[test]
-    fn start_request_serializes_for_client() {
-        let req = StartMembersRequest {
-            member: Some("alice".to_string()),
-        };
-        let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains("alice"));
-
-        let req_all = StartMembersRequest { member: None };
-        let json = serde_json::to_string(&req_all).unwrap();
-        // member: null should be present or absent depending on serde behavior
-        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert!(parsed["member"].is_null());
-    }
-
-    #[test]
     fn stop_request_serializes_for_client() {
         let req = StopMembersRequest {
             member: Some("bob".to_string()),
@@ -292,23 +474,6 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["member"], "bob");
         assert_eq!(parsed["force"], true);
-    }
-
-    #[test]
-    fn start_response_deserializes_for_client() {
-        let json = serde_json::json!({
-            "ok": true,
-            "launched": [{"name": "alice", "pid": 1234, "brain_mode": false}],
-            "skipped": [{"name": "bob", "pid": 5678}],
-            "errors": []
-        });
-        let resp: StartMembersResponse = serde_json::from_value(json).unwrap();
-        assert!(resp.ok);
-        assert_eq!(resp.launched.len(), 1);
-        assert_eq!(resp.launched[0].name, "alice");
-        assert_eq!(resp.launched[0].pid, 1234);
-        assert_eq!(resp.skipped.len(), 1);
-        assert!(resp.errors.is_empty());
     }
 
     #[test]
@@ -359,45 +524,158 @@ mod tests {
         assert_eq!(resp.uptime_secs, Some(300));
     }
 
+    // ── CT-04: Session Client Tests ──────────────────────────────────
+
+    // AC-1: bm start Creates Session — request/response serde
+
     #[test]
-    fn start_loop_request_serializes_for_client() {
-        let req = StartLoopRequest {
-            prompt: "Implement issue #5: add caching".to_string(),
-            member: Some("superman".to_string()),
+    fn session_start_request_serializes_for_client() {
+        let req = StartSessionRequest {
+            member_name: "alice".to_string(),
+            session_type: "Interactive".to_string(),
+            work_item_id: Some("ISSUE-42".to_string()),
         };
         let json = serde_json::to_string(&req).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["prompt"], "Implement issue #5: add caching");
-        assert_eq!(parsed["member"], "superman");
+        assert_eq!(parsed["member_name"], "alice");
+        assert_eq!(parsed["session_type"], "Interactive");
+        assert_eq!(parsed["work_item_id"], "ISSUE-42");
     }
 
     #[test]
-    fn start_loop_response_deserializes_for_client() {
+    fn session_start_response_deserializes_for_client() {
         let json = serde_json::json!({
             "ok": true,
-            "loop_id": "loop-9999",
-            "pid": 9999,
+            "session_id": "a1b2c3d4",
             "error": null
         });
-        let resp: StartLoopResponse = serde_json::from_value(json).unwrap();
+        let resp: StartSessionResponse = serde_json::from_value(json).unwrap();
         assert!(resp.ok);
-        assert_eq!(resp.loop_id, Some("loop-9999".to_string()));
-        assert_eq!(resp.pid, Some(9999));
+        assert_eq!(resp.session_id, Some("a1b2c3d4".to_string()));
         assert!(resp.error.is_none());
     }
 
+    // AC-5: bm stop — stop response serde
+
     #[test]
-    fn start_loop_response_deserializes_error_for_client() {
+    fn session_stop_response_deserializes_for_client() {
         let json = serde_json::json!({
-            "ok": false,
-            "loop_id": null,
-            "pid": null,
-            "error": "no workspace found"
+            "ok": true,
+            "error": null
         });
-        let resp: StartLoopResponse = serde_json::from_value(json).unwrap();
-        assert!(!resp.ok);
-        assert!(resp.loop_id.is_none());
-        assert!(resp.pid.is_none());
-        assert_eq!(resp.error, Some("no workspace found".to_string()));
+        let resp: StopSessionResponse = serde_json::from_value(json).unwrap();
+        assert!(resp.ok);
+        assert!(resp.error.is_none());
+    }
+
+    // AC-6: bm status — list sessions response serde
+
+    #[test]
+    fn session_list_response_deserializes_for_client() {
+        let json = serde_json::json!({
+            "sessions": [{
+                "session_id": "a1b2c3d4",
+                "member_name": "alice",
+                "session_type": "Interactive",
+                "current_state": "Active",
+                "started_at": "2026-06-03T10:00:00Z"
+            }]
+        });
+        let resp: SessionListResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(resp.sessions.len(), 1);
+        assert_eq!(resp.sessions[0].session_id, "a1b2c3d4");
+        assert_eq!(resp.sessions[0].member_name, "alice");
+    }
+
+    // AC-8: Daemon Not Running Detection — clear error
+
+    #[test]
+    fn daemon_not_running_connect_fails_with_clear_error() {
+        let result = DaemonClient::connect("nonexistent-team-for-session-tests-xyz");
+        let err_msg = match result {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("connect must fail when daemon is not running"),
+        };
+        assert!(
+            err_msg.contains("not found") || err_msg.contains("not running") || err_msg.contains("Daemon"),
+            "error must indicate daemon is not running, got: {err_msg}"
+        );
+    }
+
+    // ── CT-89-06: Inspect/Cleanup Client Serde ──────────────────────
+
+    #[test]
+    fn inspect_response_deserializes_for_client() {
+        let json = serde_json::json!({
+            "ok": true,
+            "session_id": "abc123",
+            "member_name": "alice",
+            "session_type": "Loop",
+            "current_state": "Retained",
+            "workspace_path": "/tmp/ws",
+            "finalization_results": {
+                "exit_status": "Completed",
+                "committed_repos": [{"repo_name": "botminter", "branch": "main"}],
+                "pushed_branches": ["main"],
+                "recovery_branches": [],
+                "github_issue_urls": []
+            },
+            "git_state": {
+                "repos": [{"repo_name": "botminter", "current_branch": "main", "uncommitted_files": [], "unpushed_branches": []}]
+            },
+            "error": null
+        });
+        let resp: InspectSessionResponse = serde_json::from_value(json).unwrap();
+        assert!(resp.ok);
+        assert_eq!(resp.session_id, Some("abc123".to_string()));
+        assert_eq!(resp.member_name, Some("alice".to_string()));
+        assert!(resp.finalization_results.is_some());
+        assert!(resp.git_state.is_some());
+    }
+
+    #[test]
+    fn cleanup_response_deserializes_for_client() {
+        let json = serde_json::json!({
+            "ok": true,
+            "session_id": "abc123",
+            "workspace_removed": true,
+            "registry_removed": true,
+            "error": null
+        });
+        let resp: CleanupSessionResponse = serde_json::from_value(json).unwrap();
+        assert!(resp.ok);
+        assert!(resp.workspace_removed);
+        assert!(resp.registry_removed);
+    }
+
+    #[test]
+    fn bulk_cleanup_request_serializes_for_client() {
+        let req = BulkCleanupRequest {
+            filter: "all".to_string(),
+            value: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["filter"], "all");
+    }
+
+    #[test]
+    fn bulk_cleanup_response_deserializes_for_client() {
+        let json = serde_json::json!({
+            "ok": true,
+            "cleaned": 3,
+            "reports": [
+                {"session_id": "s1", "workspace_removed": true, "registry_removed": true},
+                {"session_id": "s2", "workspace_removed": false, "registry_removed": true},
+                {"session_id": "s3", "workspace_removed": true, "registry_removed": true}
+            ],
+            "error": null
+        });
+        let resp: BulkCleanupResponse = serde_json::from_value(json).unwrap();
+        assert!(resp.ok);
+        assert_eq!(resp.cleaned, 3);
+        assert_eq!(resp.reports.len(), 3);
+        assert!(resp.reports[0].workspace_removed);
+        assert!(!resp.reports[1].workspace_removed);
     }
 }

@@ -59,7 +59,7 @@ pub fn run(
     // ── Display ───────────────────────────────────────────────────
     if result.already_existed {
         println!(
-            "Member {} already exists in team '{}'. Storing App credentials.",
+            "Member {} already exists in team '{}'.",
             result.member_dir_name, team.name
         );
     } else {
@@ -68,8 +68,15 @@ pub fn run(
 
     if result.app_credentials_stored {
         println!("GitHub App credentials stored for {}.", result.member_dir_name);
-    } else if !team.github_repo.is_empty() && !app_flags.reuse_app {
-        // No --reuse-app and team has a GitHub repo: run the interactive manifest flow
+    } else if result.already_existed && !team.github_repo.is_empty() && !app_flags.reuse_app {
+        // Member exists but --reuse-app not provided: fail fast instead of starting OAuth flow
+        anyhow::bail!(
+            "Member '{}' already exists in team '{}'. \
+             Use --reuse-app to update its GitHub App credentials.",
+            result.member_dir_name, team.name
+        );
+    } else if !result.already_existed && !team.github_repo.is_empty() && !app_flags.reuse_app {
+        // New member without --reuse-app: run the interactive manifest flow
         run_manifest_flow_for_member(team, &result.member_dir_name, app_flags.save_credentials)?;
     }
 

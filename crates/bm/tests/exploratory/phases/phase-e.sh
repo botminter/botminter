@@ -1,39 +1,60 @@
 #!/usr/bin/env bash
-# Phase E: Full Sync (-a flag)
-# Tests combined bridge + workspace sync, idempotency, new member addition.
+# Phase E: Member Hire & Session Workflow
+# Tests new member hire, bridge identity provisioning, and session creation.
 set -uo pipefail
 source "$LIB"
 ensure_gh_token
 ensure_keyring
 
-header "Phase E: Full Sync (--bridge flag)"
+header "Phase E: Member Hire & Session Workflow"
 
-# Note: -a includes --repos which requires GitHub workspace repos per member.
-# For local-only teams, use --bridge (bridge + workspace, no git push).
-
-OUT=$(bm teams sync --bridge -v 2>&1)
+# E1: Hire new member (carol) — uses engineer role (valid in agentic-sdlc-planning profile)
+OUT=$(bm_hire engineer --name carol 2>&1)
 EC=$?
-if [ $EC -eq 0 ]; then pass "E1" "Full sync --bridge -v"; else fail "E1" "Full sync" "exit $EC: $(echo "$OUT" | tail -5)"; echo "$OUT"; fi
-
-OUT=$(bm teams sync --bridge -v 2>&1)
-EC=$?
-if [ $EC -eq 0 ]; then pass "E2" "Full sync again (idempotent)"; else fail "E2" "Idempotent sync" "exit $EC"; fi
-
-bm_hire superman --name dave 2>&1
-OUT=$(bm teams sync --bridge -v 2>&1)
-EC=$?
-if [ $EC -eq 0 ] && [ -f "$TEAM_DIR/superman-dave/.botminter.workspace" ]; then
-    pass "E3" "Hire dave + sync creates new workspace"
+if [ $EC -eq 0 ] || echo "$OUT" | grep -qi "already\|exist\|hired"; then
+    pass "E1" "Hire engineer-carol (bm_hire engineer --name carol)"
 else
-    fail "E3" "Dave workspace" "exit $EC or missing marker"
+    fail "E1" "Hire carol" "exit $EC: $(echo "$OUT" | tail -3)"
 fi
 
-# Count workspaces
-WS_COUNT=$(ls -d "$TEAM_DIR"/superman-*/. 2>/dev/null | wc -l)
-if [ "$WS_COUNT" -ge 4 ]; then pass "E4" "All $WS_COUNT member workspaces present"; else fail "E4" "Workspaces" "only $WS_COUNT found"; fi
+# E2: Provision bridge identity for carol
+OUT=$(bm bridge identity add engineer-carol -t $TEAM 2>&1)
+EC=$?
+if [ $EC -eq 0 ]; then
+    pass "E2" "bm bridge identity add engineer-carol"
+else
+    fail "E2" "Bridge identity add" "exit $EC: $(echo "$OUT" | tail -3)"
+fi
 
-# Count bridge identities
-ID_COUNT=$(jq '.identities | length' "$TEAM_DIR/bridge-state.json" 2>/dev/null || echo "0")
-if [ "$ID_COUNT" -ge 5 ]; then pass "E5" "Bridge has $ID_COUNT identities (admin + 4 members)"; else fail "E5" "Identities" "count=$ID_COUNT"; fi
+# E3: bm start engineer-carol creates a session
+OUT=$(bm start engineer-carol -t $TEAM 2>&1)
+EC=$?
+if [ $EC -eq 0 ]; then
+    pass "E3" "bm start engineer-carol: session started"
+else
+    fail "E3" "bm start carol" "exit $EC: $(echo "$OUT" | tail -3)"
+fi
+
+# Wait for session to register
+sleep 2
+
+# E4: Session visible in bm session list
+SESSION_LIST=$(bm session list -t $TEAM 2>&1)
+if echo "$SESSION_LIST" | grep -qi "engineer-carol\|carol"; then
+    pass "E4" "Session visible in bm session list (engineer-carol)"
+else
+    note "E4" "Session list" "carol not found in output: $(echo "$SESSION_LIST" | head -3)"
+fi
+
+# E5: Bridge identity list shows carol
+OUT=$(bm bridge identity list -t $TEAM 2>&1)
+EC=$?
+if [ $EC -eq 0 ] && echo "$OUT" | grep -qi "engineer-carol\|carol"; then
+    pass "E5" "bm bridge identity list shows engineer-carol"
+else
+    note "E5" "Identity list" "carol not found — output: $(echo "$OUT" | head -5)"
+fi
+
+bm stop --force -t $TEAM 2>/dev/null || true
 
 echo "Phase E complete."

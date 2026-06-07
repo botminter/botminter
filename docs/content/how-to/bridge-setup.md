@@ -37,7 +37,7 @@ bm init ... --bridge telegram
 bm init ... --bridge rocketchat
 ```
 
-Omitting `--bridge` means no bridge is configured. When a bridge is selected, the init output will suggest `bm teams sync --all` (which provisions both workspaces and bridge identities).
+Omitting `--bridge` means no bridge is configured. When a bridge is selected, the init output will suggest provisioning bridge identities with `bm bridge identity add`.
 
 ## Step 2: Start local bridges
 
@@ -53,19 +53,13 @@ External bridges (Telegram) skip this step -- the service is managed externally.
 
 ## Step 3: Provision bridge identities
 
-Run sync with the `--bridge` flag to provision identities and rooms on the bridge:
+Provision identities and rooms on the bridge:
 
 ```bash
-bm teams sync --bridge
+bm bridge identity add <member>
 ```
 
-This is idempotent -- it only provisions members not yet onboarded. For external bridges, it validates existing tokens. For local bridges, it creates bot accounts and generates tokens automatically.
-
-To sync both repositories and bridge in one command:
-
-```bash
-bm teams sync --all    # equivalent to --repos --bridge
-```
+This is idempotent -- it only provisions members not yet onboarded. For external bridges, it prompts for a token. For local bridges, it creates bot accounts and generates tokens automatically.
 
 ## Step 4: Launch members
 
@@ -96,7 +90,7 @@ bm bridge identity add engineer-01
 # Local bridges: auto-provisions via the bridge API
 ```
 
-After adding credentials, run `bm teams sync` to update the member's `ralph.yml` with `RObot.enabled: true`.
+After adding credentials, the member's `ralph.yml` is updated with `RObot.enabled: true`. Changes take effect on the next session start.
 
 ### Viewing stored credentials
 
@@ -154,7 +148,7 @@ The Tuwunel bridge runs a local Matrix homeserver in a Podman container. All con
 Lifecycle:
 
 1. **Start:** `bm bridge start` creates a Podman container (`bm-tuwunel-{team}`) with a persistent volume (`bm-tuwunel-{team}-data`). An admin account (`bmadmin` by default) is registered automatically as the first user.
-2. **Provision:** `bm teams sync --bridge` registers per-member bot users via the Matrix client-server API. Passwords are generated automatically and stored in `tuwunel-passwords.json` (see [Security considerations](../concepts/bridges.md#security-considerations)).
+2. **Provision:** `bm bridge identity add <member>` registers per-member bot users via the Matrix client-server API. Passwords are generated automatically and stored in `tuwunel-passwords.json` (see [Security considerations](../concepts/bridges.md#security-considerations)).
 3. **Rooms:** A default `{team}-general` room is created automatically during provisioning. All provisioned bots are invited to it. Create additional rooms with `bm bridge room create <name>`.
 4. **Connect a client:** Point any Matrix client (e.g., [Element](https://element.io)) at `http://127.0.0.1:8008` (or your custom `TUWUNEL_PORT`). Sign in as `bmadmin` with the admin password to observe agent conversations. Search for `#{team}-general:localhost` in the room directory.
 5. **Launch:** `bm start` injects per-member access tokens as `RALPH_MATRIX_ACCESS_TOKEN` + `RALPH_MATRIX_HOMESERVER_URL`.
@@ -171,13 +165,13 @@ Requires: Podman, `curl`, `jq`, `openssl`.
 
 1. **Create bots:** Create one Telegram bot per team member via [@BotFather](https://t.me/BotFather). Each bot needs a unique name.
 2. **Supply tokens:** Provide the bot token via `bm bridge identity add`.
-3. **Sync:** Run `bm teams sync --bridge` to validate tokens and update workspace config.
+3. **Validate:** Run `bm bridge identity show <member>` to verify tokens are stored correctly.
 4. **Launch:** `bm start` injects per-member bot tokens as `RALPH_TELEGRAM_BOT_TOKEN`.
 
 ### Rocket.Chat (local, experimental)
 
 1. **Start:** `bm bridge start` creates a Podman pod with Rocket.Chat + MongoDB.
-2. **Provision:** `bm teams sync --bridge` creates bot users and generates auth tokens via the RC REST API.
+2. **Provision:** `bm bridge identity add <member>` creates bot users and generates auth tokens via the RC REST API.
 3. **Rooms:** A default room is created automatically. Create additional rooms with `bm bridge room create <name>`.
 4. **Launch:** `bm start` injects per-member auth tokens as `RALPH_ROCKETCHAT_AUTH_TOKEN` + `RALPH_ROCKETCHAT_SERVER_URL`.
 5. **Stop:** `bm bridge stop` stops the Podman pod (data is preserved for restart).

@@ -175,6 +175,33 @@ test.describe('Process page', () => {
 	});
 });
 
+test.describe('Sessions page', () => {
+	test.beforeEach(async ({ page }) => {
+		await mockApi(page);
+		await page.goto(`/teams/${TEAM}/sessions`);
+	});
+
+	test('renders sessions heading', async ({ page }) => {
+		await expect(main(page).getByRole('heading', { name: 'Sessions' })).toBeVisible();
+	});
+
+	test('renders member names', async ({ page }) => {
+		const content = main(page);
+		await expect(content.getByText('superman-alice')).toBeVisible();
+		await expect(content.getByText('team-manager-mgr')).toBeVisible();
+	});
+
+	test('renders state badges', async ({ page }) => {
+		const content = main(page);
+		await expect(content.getByText('Active', { exact: true })).toBeVisible();
+		await expect(content.getByText('Completed', { exact: true })).toBeVisible();
+	});
+
+	test('shows session count', async ({ page }) => {
+		await expect(main(page).getByText('2 sessions')).toBeVisible();
+	});
+});
+
 test.describe('Files browser page', () => {
 	test.beforeEach(async ({ page }) => {
 		await mockApi(page);

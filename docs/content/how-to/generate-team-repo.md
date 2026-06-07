@@ -97,13 +97,13 @@ bm projects add https://github.com/org/my-project.git
 !!! note
     Project URLs must be HTTPS. SSH URLs are not supported.
 
-### 4. Provision workspaces
+### 4. Launch members
 
 ```bash
-bm teams sync
+bm start
 ```
 
-This creates workspace repos for each member with the team repo as a `team/` submodule, project forks as `projects/` submodules, copied context files (PROMPT.md, CLAUDE.md, ralph.yml), and assembled `.claude/agents/`.
+This creates ephemeral session workspaces for each member from shared repository clones, assembles context files (PROMPT.md, CLAUDE.md, ralph.yml), and launches agents.
 
 ### 5. Add project-specific knowledge
 

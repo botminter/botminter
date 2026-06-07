@@ -17,11 +17,28 @@ case "$1" in
         > "$PWD/.ralph-stub-matrix-response" 2>&1
     fi
     env | grep -E '^(RALPH_|GH_TOKEN|GH_CONFIG_DIR)' | sort > "$PWD/.ralph-stub-env"
+    # Install SIGTERM trap BEFORE the polling window so it is active from the very start.
+    # Dynamic check at signal time: if .ralph-stub-ignore-sigterm exists, ignore; else exit.
+    # This prevents the default SIGTERM handler from killing the script during the 5-second
+    # startup poll (race window where the trap was previously not yet installed).
+    trap '
+      if [ -f "$PWD/.ralph-stub-ignore-sigterm" ]; then
+        echo "$(date -u +%FT%TZ) SIGTERM received and ignored" >> "$PWD/.ralph-stub-sigterm.log"
+      else
+        rm -f "$PWD/.ralph-stub-pid"
+        exit 0
+      fi
+    ' SIGTERM
+    trap "rm -f \"$PWD/.ralph-stub-pid\"; exit 0" SIGINT EXIT
+    # Poll for up to 5 seconds so tests can write .ralph-stub-ignore-sigterm after workspace
+    # creation but before stub-ralph enters the main loop.
+    _si=0
+    while [ $_si -lt 50 ] && [ ! -f "$PWD/.ralph-stub-ignore-sigterm" ]; do
+        sleep 0.1
+        _si=$((_si + 1))
+    done
     if [ -f "$PWD/.ralph-stub-ignore-sigterm" ]; then
-      echo "$(date -u +%FT%TZ) SIGTERM trap set to ignore" >> "$PWD/.ralph-stub-sigterm.log"
-      trap 'echo "$(date -u +%FT%TZ) SIGTERM received and ignored" >> "$PWD/.ralph-stub-sigterm.log"' SIGTERM
-    else
-      trap "rm -f \"$PWD/.ralph-stub-pid\"; exit 0" SIGTERM SIGINT
+      echo "$(date -u +%FT%TZ) SIGTERM trap active, ignore-file present" >> "$PWD/.ralph-stub-sigterm.log"
     fi
     while true; do sleep 1; done
     ;;

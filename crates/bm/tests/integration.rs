@@ -213,11 +213,6 @@ fn bm_add_project(home: &Path, url: &str, team: &str) {
     bm_run(home, &["projects", "add", url, "-t", team]);
 }
 
-/// Runs `bm teams sync` via subprocess.
-fn bm_sync(home: &Path, team: &str) {
-    bm_run(home, &["teams", "sync", "-t", team]);
-}
-
 /// Gets an OS-assigned free port by binding to port 0.
 fn get_free_port() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind to free port");
@@ -455,88 +450,28 @@ fn projects_add_nonexistent_url_errors() {
 }
 
 #[test]
-fn sync_with_nonexistent_fork_url_gives_actionable_error() {
+fn sync_removed_returns_informative_error() {
     let tmp = tempfile::tempdir().unwrap();
-    let team_repo = setup_team(tmp.path(), "bad-fork-team", "scrum");
+    setup_team(tmp.path(), "test-team", "scrum");
 
-    bm_hire(tmp.path(), "architect", "alice", "bad-fork-team");
-
-    // Manually inject a project with a non-existent fork URL into botminter.yml
-    // (bypasses validation that projects::add will have)
-    let manifest_path = team_repo.join("botminter.yml");
-    let mut manifest: bm::profile::ProfileManifest = {
-        let contents = fs::read_to_string(&manifest_path).unwrap();
-        serde_yml::from_str(&contents).unwrap()
-    };
-    let bad_url = tmp.path().join("does-not-exist-repo");
-    manifest.projects.push(bm::profile::ProjectDef {
-        name: "ghost-project".to_string(),
-        fork_url: bad_url.to_string_lossy().to_string(),
-    });
-    let contents = serde_yml::to_string(&manifest).unwrap();
-    fs::write(&manifest_path, contents).unwrap();
-    git(&team_repo, &["add", "botminter.yml"]);
-    git(&team_repo, &["commit", "-m", "add bad project"]);
-
-    let stderr = bm_run_fail(tmp.path(), &["teams", "sync", "-t", "bad-fork-team"]);
-    // The member name should appear in the failure list
+    let stderr = bm_run_fail(tmp.path(), &["teams", "sync", "-t", "test-team"]);
     assert!(
-        stderr.contains("architect-alice"),
-        "error should reference the failed member: {}",
+        stderr.contains("bm teams sync has been removed"),
+        "should explain sync was removed: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("bm minty"),
+        "should reference bm minty: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("bm start"),
+        "should reference bm start: {}",
         stderr
     );
 }
 
-#[test]
-fn sync_continues_past_failed_member() {
-    let tmp = tempfile::tempdir().unwrap();
-    let team_repo = setup_team(tmp.path(), "mixed-team", "scrum");
-
-    // Create a valid fake fork
-    let good_fork = tmp.path().join("good-fork");
-    fs::create_dir_all(&good_fork).unwrap();
-    git(&good_fork, &["init", "-b", "main"]);
-    git(&good_fork, &["config", "user.email", "test@botminter.test"]);
-    git(&good_fork, &["config", "user.name", "BM Test"]);
-    fs::write(good_fork.join("README.md"), "# Good fork").unwrap();
-    git(&good_fork, &["add", "-A"]);
-    git(&good_fork, &["commit", "-m", "init"]);
-
-    // Hire two members
-    bm_hire(tmp.path(), "architect", "alice", "mixed-team");
-    bm_hire(tmp.path(), "architect", "bob", "mixed-team");
-
-    // Manually inject a project with a bad fork URL
-    let manifest_path = team_repo.join("botminter.yml");
-    let mut manifest: bm::profile::ProfileManifest = {
-        let contents = fs::read_to_string(&manifest_path).unwrap();
-        serde_yml::from_str(&contents).unwrap()
-    };
-    let bad_url = tmp.path().join("bad-fork-nonexistent");
-    manifest.projects.push(bm::profile::ProjectDef {
-        name: "bad-fork".to_string(),
-        fork_url: bad_url.to_string_lossy().to_string(),
-    });
-    let contents = serde_yml::to_string(&manifest).unwrap();
-    fs::write(&manifest_path, contents).unwrap();
-    git(&team_repo, &["add", "botminter.yml"]);
-    git(&team_repo, &["commit", "-m", "add bad project"]);
-
-    // Both members should fail (bad fork), but sync should continue past first failure
-    let stderr = bm_run_fail(tmp.path(), &["teams", "sync", "-t", "mixed-team"]);
-
-    // Both failing members should be mentioned
-    assert!(
-        stderr.contains("architect-alice"),
-        "error should mention alice: {}",
-        stderr
-    );
-    assert!(
-        stderr.contains("architect-bob"),
-        "error should mention bob: {}",
-        stderr
-    );
-}
 
 // ── Schema version guard ─────────────────────────────────────────────
 
@@ -557,25 +492,6 @@ fn schema_version_mismatch_blocks_hire() {
     assert!(stderr.contains("bm upgrade"), "Should suggest bm upgrade: {}", stderr);
 }
 
-#[test]
-fn schema_version_mismatch_blocks_sync() {
-    let tmp = tempfile::tempdir().unwrap();
-    let team_repo = setup_team(tmp.path(), "test-team", "scrum");
-
-    // Hire a member first (with correct schema)
-    bm_hire(tmp.path(), "architect", "bob", "test-team");
-
-    // Tamper with schema_version
-    let manifest_path = team_repo.join("botminter.yml");
-    let mut content = fs::read_to_string(&manifest_path).unwrap();
-    content = content.replace("schema_version: '1.0'", "schema_version: v99");
-    fs::write(&manifest_path, content).unwrap();
-    git(&team_repo, &["add", "botminter.yml"]);
-    git(&team_repo, &["commit", "-m", "chore: bump schema"]);
-
-    let stderr = bm_run_fail(tmp.path(), &["teams", "sync"]);
-    assert!(stderr.contains("bm upgrade"), "Should suggest bm upgrade: {}", stderr);
-}
 
 // ── Multi-team and -t flag tests ─────────────────────────────────────
 
@@ -619,114 +535,9 @@ fn team_flag_nonexistent_errors() {
 
 // ── Full lifecycle tests ─────────────────────────────────────────────
 
-#[test]
-fn lifecycle_hire_then_sync_no_project() {
-    let tmp = tempfile::tempdir().unwrap();
-    let team_repo = setup_team(tmp.path(), "lifecycle-team", "scrum");
 
-    // Hire two members
-    bm_hire(tmp.path(), "architect", "alice", "lifecycle-team");
-    bm_hire(tmp.path(), "human-assistant", "bob", "lifecycle-team");
 
-    // Sync (no projects — submodule model)
-    bm_sync(tmp.path(), "lifecycle-team");
 
-    // Verify workspaces were created (one workspace per member)
-    let team_dir = team_repo.parent().unwrap();
-    let alice_ws = team_dir.join("architect-alice");
-    let bob_ws = team_dir.join("human-assistant-bob");
-
-    // Submodule model: team/ submodule instead of .botminter/
-    assert!(alice_ws.join("team").is_dir(), "alice should have team/ submodule");
-    assert!(bob_ws.join("team").is_dir(), "bob should have team/ submodule");
-    assert!(alice_ws.join(".gitmodules").exists(), "alice should have .gitmodules");
-    assert!(bob_ws.join(".gitmodules").exists(), "bob should have .gitmodules");
-
-    // Verify team submodule has member config
-    assert!(
-        alice_ws.join("team/members/architect-alice").is_dir(),
-        "alice team submodule should contain member dir"
-    );
-    assert!(
-        bob_ws.join("team/members/human-assistant-bob").is_dir(),
-        "bob team submodule should contain member dir"
-    );
-}
-
-#[test]
-fn lifecycle_hire_project_add_then_sync() {
-    let tmp = tempfile::tempdir().unwrap();
-    let team_repo = setup_team(tmp.path(), "proj-team", "scrum");
-
-    // Create a dummy "fork" repo to clone from
-    let fork_url = create_fake_fork(tmp.path(), "fake-fork");
-
-    // Hire a member
-    bm_hire(tmp.path(), "architect", "alice", "proj-team");
-
-    // Add the project
-    bm_add_project(tmp.path(), &fork_url, "proj-team");
-
-    // Sync
-    bm_sync(tmp.path(), "proj-team");
-
-    // Submodule model: one workspace per member, project as submodule
-    let team_dir = team_repo.parent().unwrap();
-    let ws = team_dir.join("architect-alice");
-
-    assert!(ws.join("team").is_dir(), "workspace should have team/ submodule");
-    assert!(ws.join(".gitmodules").exists(), "workspace should have .gitmodules");
-    assert!(
-        ws.join("projects/fake-fork").is_dir(),
-        "workspace should have projects/fake-fork/ submodule"
-    );
-    assert!(
-        ws.join("projects/fake-fork/README.md").exists(),
-        "project submodule should have fork content"
-    );
-}
-
-#[test]
-fn lifecycle_sync_idempotent() {
-    let tmp = tempfile::tempdir().unwrap();
-    setup_team(tmp.path(), "idem-team", "scrum");
-
-    bm_hire(tmp.path(), "architect", "alice", "idem-team");
-
-    // Sync twice — should not error
-    bm_sync(tmp.path(), "idem-team");
-    bm_sync(tmp.path(), "idem-team");
-
-    // Assert context files are present after both syncs
-    let ws = tmp.path().join("workspaces/idem-team/architect-alice");
-    assert!(ws.join("ralph.yml").exists(), "ralph.yml should exist after sync");
-    assert!(ws.join("CLAUDE.md").exists(), "CLAUDE.md should exist after sync");
-    assert!(ws.join("PROMPT.md").exists(), "PROMPT.md should exist after sync");
-    assert!(ws.join(".botminter.workspace").exists(), "marker should exist after sync");
-}
-
-#[test]
-fn sync_recovers_stale_workspace_dir() {
-    let tmp = tempfile::tempdir().unwrap();
-    setup_team(tmp.path(), "stale-team", "scrum");
-
-    bm_hire(tmp.path(), "architect", "alice", "stale-team");
-    bm_sync(tmp.path(), "stale-team");
-
-    let ws = tmp.path().join("workspaces/stale-team/architect-alice");
-    assert!(ws.join(".botminter.workspace").exists(), "marker should exist after first sync");
-
-    // Remove the marker to simulate a stale/incomplete workspace
-    fs::remove_file(ws.join(".botminter.workspace")).unwrap();
-
-    // Sync again — should recover by re-creating the workspace
-    bm_sync(tmp.path(), "stale-team");
-
-    assert!(ws.join(".botminter.workspace").exists(), "marker should be restored after recovery");
-    assert!(ws.join("ralph.yml").exists(), "ralph.yml should exist after recovery");
-    assert!(ws.join("CLAUDE.md").exists(), "CLAUDE.md should exist after recovery");
-    assert!(ws.join("PROMPT.md").exists(), "PROMPT.md should exist after recovery");
-}
 
 // ── Roles list test ──────────────────────────────────────────────────
 
@@ -1169,90 +980,7 @@ fn hire_then_members_list_shows_role() {
 
 // ── Multi-member / multi-project scenarios ───────────────────────────
 
-#[test]
-fn hire_multiple_roles_then_sync() {
-    let tmp = tempfile::tempdir().unwrap();
-    let team_repo = setup_team(tmp.path(), "multi-hire-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
-    let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
-    let picks: Vec<&str> = (0..3).map(|i| roles[i % roles.len()].as_str()).collect();
-    let names = ["m1", "m2", "m3"];
-
-    for (role, name) in picks.iter().zip(names.iter()) {
-        bm_hire(tmp.path(), role, name, "multi-hire-team");
-    }
-
-    let fork_a = create_fake_fork(tmp.path(), "proj-alpha");
-    let fork_b = create_fake_fork(tmp.path(), "proj-beta");
-    bm_add_project(tmp.path(), &fork_a, "multi-hire-team");
-    bm_add_project(tmp.path(), &fork_b, "multi-hire-team");
-
-    bm_sync(tmp.path(), "multi-hire-team");
-
-    let team_dir = team_repo.parent().unwrap();
-    for (role, name) in picks.iter().zip(names.iter()) {
-        let member_dir = format!("{}-{}", role, name);
-        let ws = team_dir.join(&member_dir);
-
-        // Submodule model: one workspace per member with team/ and projects/
-        assert!(
-            ws.join("team").is_dir(),
-            "{} should have team/ submodule",
-            member_dir
-        );
-        assert!(
-            ws.join("projects/proj-alpha").is_dir(),
-            "{} should have projects/proj-alpha/ submodule",
-            member_dir
-        );
-        assert!(
-            ws.join("projects/proj-beta").is_dir(),
-            "{} should have projects/proj-beta/ submodule",
-            member_dir
-        );
-    }
-}
-
-#[test]
-fn sync_with_multiple_projects_creates_project_submodules() {
-    let tmp = tempfile::tempdir().unwrap();
-    let team_repo = setup_team(tmp.path(), "proj-ws-team", "scrum");
-
-    let profiles_path = profile::profiles_dir_for(tmp.path());
-    let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
-    let role = &roles[0];
-
-    bm_hire(tmp.path(), role, "alice", "proj-ws-team");
-
-    let fork_a = create_fake_fork(tmp.path(), "project-one");
-    let fork_b = create_fake_fork(tmp.path(), "project-two");
-    bm_add_project(tmp.path(), &fork_a, "proj-ws-team");
-    bm_add_project(tmp.path(), &fork_b, "proj-ws-team");
-
-    bm_sync(tmp.path(), "proj-ws-team");
-
-    let team_dir = team_repo.parent().unwrap();
-    let member = format!("{}-alice", role);
-    let ws = team_dir.join(&member);
-
-    // Submodule model: one workspace with team/ and projects/ submodules
-    assert!(ws.join("team").is_dir(), "{} should have team/ submodule", member);
-
-    for proj in &["project-one", "project-two"] {
-        assert!(
-            ws.join(format!("projects/{}", proj)).is_dir(),
-            "{} should have projects/{} submodule",
-            member,
-            proj
-        );
-        assert!(
-            ws.join(format!("projects/{}/README.md", proj)).exists(),
-            "projects/{} should have fork content",
-            proj
-        );
-    }
-}
 
 #[test]
 fn hire_same_role_twice_auto_suffix() {
@@ -1277,41 +1005,6 @@ fn hire_same_role_twice_auto_suffix() {
     assert!(m2.join("botminter.yml").exists(), "{}-02 should have botminter.yml", role);
 }
 
-#[test]
-fn sync_after_second_hire_creates_new_workspace() {
-    let tmp = tempfile::tempdir().unwrap();
-    let team_repo = setup_team(tmp.path(), "incr-team", "scrum");
-
-    let profiles_path = profile::profiles_dir_for(tmp.path());
-    let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
-    let role_a = &roles[0];
-
-    bm_hire(tmp.path(), role_a, "first", "incr-team");
-    bm_sync(tmp.path(), "incr-team");
-
-    let team_dir = team_repo.parent().unwrap();
-    let first_ws = team_dir.join(format!("{}-first", role_a));
-    assert!(
-        first_ws.join("team").is_dir(),
-        "first workspace should have team/ submodule after initial sync"
-    );
-
-    // Hire second member (different role if available)
-    let role_b = if roles.len() > 1 { &roles[1] } else { role_a };
-    bm_hire(tmp.path(), role_b, "second", "incr-team");
-
-    bm_sync(tmp.path(), "incr-team");
-
-    let second_ws = team_dir.join(format!("{}-second", role_b));
-    assert!(
-        second_ws.join("team").is_dir(),
-        "second workspace should have team/ submodule after incremental sync"
-    );
-    assert!(
-        first_ws.join("team").is_dir(),
-        "first workspace should still have team/ submodule after incremental sync"
-    );
-}
 
 // ── Error paths ──────────────────────────────────────────────────────
 
@@ -1362,33 +1055,6 @@ fn hire_with_corrupt_manifest_errors() {
     );
 }
 
-#[test]
-fn sync_missing_workzone_creates_it() {
-    let tmp = tempfile::tempdir().unwrap();
-    setup_team(tmp.path(), "recreate-team", "scrum");
-
-    let profiles_path = profile::profiles_dir_for(tmp.path());
-    let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
-    let role = &roles[0];
-
-    bm_hire(tmp.path(), role, "alice", "recreate-team");
-    bm_sync(tmp.path(), "recreate-team");
-
-    let member_dir = format!("{}-alice", role);
-    let ws = tmp.path().join("workspaces/recreate-team").join(&member_dir);
-    assert!(ws.is_dir(), "workspace should exist after first sync");
-
-    // Delete the workspace directory
-    fs::remove_dir_all(&ws).unwrap();
-    assert!(!ws.exists(), "workspace should be deleted");
-
-    // Sync again — should recreate the missing workspace
-    bm_sync(tmp.path(), "recreate-team");
-    assert!(
-        ws.join("team").is_dir(),
-        "sync should recreate missing workspace with team/ submodule"
-    );
-}
 
 #[test]
 fn teams_list_with_empty_config() {
@@ -2590,26 +2256,21 @@ fn chat_without_workspace_errors() {
     let tmp = tempfile::tempdir().unwrap();
     setup_team(tmp.path(), "chat-nows-team", "scrum");
 
-    let profiles_path = profile::profiles_dir_for(tmp.path());
-    let roles = profile::list_roles_from("scrum", &profiles_path).unwrap();
-    let role = &roles[0];
-
-    // Hire but don't create workspace
-    bm_hire(tmp.path(), role, "bob", "chat-nows-team");
-    let member_name = format!("{}-bob", role);
-
+    // Do NOT hire the member — "nonexistent-bob" is not in the team repo's members dir.
+    // The daemon will create a session workspace, but prepare_chat_session_from_path
+    // will fail because the member doesn't exist in the team repo.
     let stderr = bm_run_fail(
         tmp.path(),
         &[
             "chat",
-            &member_name,
+            "nonexistent-bob",
             "-t",
             "chat-nows-team",
         ],
     );
     assert!(
-        stderr.contains("No workspace") || stderr.contains("sync"),
-        "should mention missing workspace, stderr:\n{}",
+        stderr.contains("nonexistent-bob") || stderr.contains("not found") || stderr.contains("Member"),
+        "should mention member not found, stderr:\n{}",
         stderr
     );
 }
@@ -3832,7 +3493,7 @@ fn daemon_console_api_e2e_with_fixtures() {
         // Has invariant files (design-quality.md)
         let inv_files = body["invariant_files"].as_array().expect("invariant_files");
         assert!(
-            inv_files.iter().any(|f| f.as_str().map_or(false, |s| s.contains("design-quality"))),
+            inv_files.iter().any(|f| f.as_str().is_some_and(|s| s.contains("design-quality"))),
             "alice should have design-quality.md invariant"
         );
     }
@@ -3906,7 +3567,7 @@ fn daemon_console_api_e2e_with_fixtures() {
             "botminter.yml should contain profile name"
         );
         assert!(
-            body["content_type"].as_str().map_or(false, |ct| ct.contains("yaml")),
+            body["content_type"].as_str().is_some_and(|ct| ct.contains("yaml")),
             "content_type should indicate yaml"
         );
     }

@@ -133,6 +133,15 @@ export interface SyncResponse {
 	changed_files: string[];
 }
 
+export interface ConsoleSessionSummary {
+	session_id: string;
+	member_name: string;
+	state: string;
+	session_type: string;
+	created_at: string;
+	finalization_status: string;
+}
+
 export interface ApiError {
 	error: string;
 }

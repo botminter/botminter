@@ -577,6 +577,7 @@ mod tests {
     fn test_app(config_path: PathBuf) -> axum::Router {
         let state = super::super::state::WebState {
             config_path: Arc::new(config_path),
+            sessions_state: None,
         };
         web_router(state)
     }
@@ -740,6 +741,7 @@ mod tests {
         // treats the leading / differently. Instead test via the handler directly.
         let state = super::super::state::WebState {
             config_path: Arc::new(config_path),
+            sessions_state: None,
         };
         let result = do_read_file(&state, "my-team", "/etc/passwd");
         assert!(result.is_err());
@@ -844,6 +846,7 @@ mod tests {
 
         let state = super::super::state::WebState {
             config_path: Arc::new(config_path),
+            sessions_state: None,
         };
         let result = do_write_file(&state, "my-team", "/etc/shadow", "pwned").await;
         assert!(result.is_err());

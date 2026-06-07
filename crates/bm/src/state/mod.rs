@@ -90,8 +90,15 @@ pub fn save_to(path: &Path, state: &RuntimeState) -> Result<()> {
 /// to exclude zombie processes. Zombies are dead processes that haven't been
 /// waited for — they appear alive to `kill()` but are not actually running.
 pub fn is_alive(pid: u32) -> bool {
-    // Safety: kill with signal 0 only checks existence, sends no signal.
-    if unsafe { libc::kill(pid as i32, 0) } != 0 {
+    let Ok(pid_i32) = i32::try_from(pid) else {
+        return false;
+    };
+    if pid_i32 <= 0 {
+        return false;
+    }
+    // SAFETY: pid_i32 is validated > 0 and within i32 range, so kill() targets a single process.
+    // Signal 0 checks existence without delivering a signal.
+    if unsafe { libc::kill(pid_i32 as libc::pid_t, 0) } != 0 {
         return false;
     }
 

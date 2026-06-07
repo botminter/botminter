@@ -21,6 +21,7 @@ pub mod profiles;
 pub mod profiles_init;
 pub mod projects;
 pub mod roles;
+pub mod session;
 pub mod start;
 pub mod status;
 pub mod stop;

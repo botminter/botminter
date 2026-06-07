@@ -188,7 +188,7 @@ Check these in order:
 1. **Event types**: The daemon only triggers on `issues`, `issue_comment`, and `pull_request` events. Other events (push, star, fork) are ignored.
 2. **GitHub events**: In poll mode, verify events exist with `gh api repos/{owner}/{repo}/events | head`.
 3. **gh auth**: The daemon manages member tokens via GitHub App credentials. Verify credentials are stored with `bm members show <member>`.
-4. **Member workspaces**: Run `bm teams sync` to ensure workspaces are provisioned.
+4. **Member workspaces**: Ensure members are hired with `bm hire <role>`. Session workspaces are created automatically by `bm start`.
 5. **Daemon log**: Check `~/.botminter/logs/daemon-{team}.log` for error messages.
 
 ### Finding the right log file

@@ -1,13 +1,16 @@
 //! Rocket.Chat Operator Journey
 //!
 //! Exercises the full operator lifecycle with a Rocket.Chat bridge:
-//! init -> hire -> bridge start -> identity add -> room create -> sync -> health -> stop
+//! init -> hire -> bridge start -> identity add -> room create -> provision workspace -> health -> stop
 //!
 //! Requires Podman to be available. The suite is skipped if Podman is not installed.
 
 use std::fs;
 
 use libtest_mimic::Trial;
+
+use bm::workspace;
+use bm::profile::CodingAgentDef;
 
 use super::super::helpers::{
     cleanup_project_boards, find_free_port,
@@ -243,27 +246,64 @@ fn room_create_fn(
     }
 }
 
-fn sync_bridge_fn(
+fn provision_workspace_fn(
     _gh_token: String,
 ) -> impl Fn(&mut TestEnv) + Send + std::panic::UnwindSafe + std::panic::RefUnwindSafe + 'static {
     move |env| {
-        let port = env.get_export("rc_port").expect("rc_port not set").to_string();
+        let team_dir = env.home.join("workspaces").join(TEAM_NAME);
+        let team_repo = team_dir.join("team");
 
-        env.command("bm")
-            .args(["teams", "sync", "--bridge", "-t", TEAM_NAME])
-            .env("RC_PORT", &port)
-            // Ensure credential is resolved via env var rather than keyring.
-            // The keyring may not be accessible when using the real D-Bus
-            // (needed for podman) instead of the isolated test D-Bus.
-            .env("BM_BRIDGE_TOKEN_SUPERMAN_BOT_ALICE", "rc-e2e-token")
-            .run();
+        let coding_agent = CodingAgentDef {
+            name: "claude-code".to_string(),
+            display_name: "Claude Code".to_string(),
+            context_file: "CLAUDE.md".to_string(),
+            agent_dir: ".claude".to_string(),
+            binary: "claude".to_string(),
+            system_prompt_flag: Some("--append-system-prompt-file".to_string()),
+            skip_permissions_flag: Some("--dangerously-skip-permissions".to_string()),
+        };
 
-        // Verify workspace was created and ralph.yml has RObot.rocketchat config
-        let ws = env
-            .home
-            .join("workspaces")
-            .join(TEAM_NAME)
-            .join(MEMBER_DIR);
+        let manifest_path = team_repo.join("botminter.yml");
+        let projects: Vec<(String, String)> = if manifest_path.exists() {
+            let contents = fs::read_to_string(&manifest_path).unwrap();
+            let manifest: serde_yml::Value = serde_yml::from_str(&contents).unwrap();
+            manifest["projects"]
+                .as_sequence()
+                .map(|ps| {
+                    ps.iter()
+                        .filter_map(|p| {
+                            let name = p["name"].as_str()?;
+                            let url = p["fork_url"].as_str()?;
+                            Some((name.to_string(), url.to_string()))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let project_refs: Vec<(&str, &str)> = projects
+            .iter()
+            .map(|(n, u)| (n.as_str(), u.as_str()))
+            .collect();
+
+        let params = workspace::WorkspaceRepoParams {
+            team_repo_path: &team_repo,
+            workspace_base: &team_dir,
+            member_dir_name: MEMBER_DIR,
+            team_name: TEAM_NAME,
+            projects: &project_refs,
+            github_repo: None,
+            project_number: None,
+            push: false,
+            coding_agent: &coding_agent,
+            remote_ops: None,
+            team_submodule_url: None,
+        };
+
+        workspace::create_workspace_repo(&params).unwrap();
+
+        let ws = team_dir.join(MEMBER_DIR);
         assert!(
             ws.join(".botminter.workspace").exists(),
             "workspace should have marker file"
@@ -271,6 +311,29 @@ fn sync_bridge_fn(
 
         let ralph_yml_path = ws.join("ralph.yml");
         assert!(ralph_yml_path.exists(), "ralph.yml should exist");
+
+        // Read bridge-state.json to get RC config values for RObot injection
+        let bstate_path = env.home.join("workspaces").join(TEAM_NAME).join("bridge-state.json");
+        let bstate_contents = fs::read_to_string(&bstate_path).unwrap();
+        let bstate: serde_json::Value = serde_json::from_str(&bstate_contents).unwrap();
+        let bot_user_id = bstate["identities"][MEMBER_DIR]["user_id"]
+            .as_str()
+            .expect("identity should have user_id")
+            .to_string();
+        let room_id = bstate["rooms"][0]["room_id"]
+            .as_str()
+            .expect("should have a room with room_id")
+            .to_string();
+        let port = env.get_export("rc_port").expect("rc_port not set");
+        let server_url = format!("http://127.0.0.1:{}", port);
+
+        let bridge_config = workspace::RobotBridgeConfig {
+            bot_user_id,
+            room_id,
+            server_url,
+            operator_id: None,
+        };
+        workspace::inject_robot_config(&ralph_yml_path, true, Some("rocketchat"), Some(&bridge_config)).unwrap();
 
         let ralph_contents = fs::read_to_string(&ralph_yml_path).unwrap();
         let ralph_doc: serde_yml::Value =
@@ -300,7 +363,6 @@ fn sync_bridge_fn(
             "RObot.rocketchat.server_url should be set"
         );
 
-        // Verify NO auth_token in ralph.yml (secrets stay as env vars)
         assert!(
             !ralph_contents.contains("auth_token"),
             "ralph.yml must NOT contain auth_token"
@@ -389,7 +451,7 @@ fn build_suite(gh_org: String, gh_token: String, config: &E2eConfig) -> GithubSu
         .case("03b_bridge_start_idempotent", bridge_start_idempotent_fn(gh_token.clone()))
         .case("04_identity_add", identity_add_fn(gh_token.clone()))
         .case("05_room_create", room_create_fn(gh_token.clone()))
-        .case("06_sync_bridge", sync_bridge_fn(gh_token.clone()))
+        .case("06_provision_workspace", provision_workspace_fn(gh_token.clone()))
         .case("07_bridge_health", bridge_health_fn(gh_token.clone()))
         .case("08_bridge_stop", bridge_stop_fn(gh_token.clone()))
         // ── Cleanup ──────────────────────────────────────────────────

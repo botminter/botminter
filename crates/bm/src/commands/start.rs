@@ -1,9 +1,11 @@
 use anyhow::{bail, Result};
+use which::which;
 
 use crate::config;
+use crate::daemon::{self, DaemonClient};
+use crate::daemon::sessions_api::StartSessionRequest;
 use crate::formation;
 use crate::profile;
-use crate::team::Team;
 
 /// Handles `bm start [member] [-t team] [--formation <name>] [--no-bridge] [--bridge-only]`.
 pub fn run(
@@ -23,7 +25,7 @@ pub fn run(
     // Resolve formation
     let resolved_formation = formation::resolve_formation(&team_repo, formation_flag)?;
 
-    // Non-local formations require current schema
+    // Non-local formations keep old behavior
     if let Some(ref fname) = resolved_formation {
         if fname != "local" {
             profile::require_current_schema(&team.name, &manifest.schema_version)?;
@@ -45,7 +47,7 @@ pub fn run(
         }
     }
 
-    // Bridge-only mode: start bridge, skip members
+    // Bridge-only mode: start bridge, skip sessions
     if bridge_only {
         if !no_bridge && team.bridge_lifecycle.start_on_up {
             if let Some(outcome) =
@@ -57,62 +59,113 @@ pub fn run(
         return Ok(());
     }
 
-    // Start local formation members
-    let result = if resolved_formation.is_some() {
-        // v2 team with formations dir — use Team API boundary
-        let local_formation = formation::create_local_formation(&team.name)?;
-        let team_api = Team::new(team, local_formation);
-        let mut result = team_api.start(&cfg, member_filter)?;
+    // Pre-flight: verify ralph is available (needed by daemon to launch Loop sessions)
+    if which("ralph").is_err() {
+        bail!("'ralph' not found in PATH. Install ralph-orchestrator first.");
+    }
 
-        // Bridge auto-start (command-layer responsibility, not formation)
-        if !no_bridge && member_filter.is_none() && team.bridge_lifecycle.start_on_up {
-            result.bridge =
-                formation::auto_start_bridge(&team_repo, &team.name, &cfg.workzone);
+    // Ensure daemon is running, auto-starting if needed
+    let client = match DaemonClient::connect(&team.name) {
+        Ok(c) => c,
+        Err(_) => {
+            eprintln!("Starting daemon for team '{}'...", team.name);
+            let mode = if team.daemon.polling { "poll" } else { "webhook" };
+            daemon::start_daemon(
+                &team.name,
+                &team_repo,
+                mode,
+                0,
+                team.daemon.interval,
+                "127.0.0.1",
+                "info",
+            )?;
+            DaemonClient::connect(&team.name)?
         }
-
-        result
-    } else {
-        // v1 team (no formations dir) — legacy path
-        formation::start_local_members(
-            team,
-            &cfg,
-            &team_repo,
-            member_filter,
-            no_bridge,
-            None,
-        )?
     };
 
-    // Display results
-    if let Some(ref bridge_outcome) = result.bridge {
-        display_bridge_outcome(bridge_outcome);
-    }
-
-    for s in &result.stale_cleaned {
-        eprintln!("Cleaned stale entry for {}", s);
-    }
-    for m in &result.skipped {
-        eprintln!("{}: already running (PID {})", m.name, m.pid);
-    }
-    for m in &result.launched {
-        if m.brain_mode {
-            eprintln!("{}: started brain (PID {})", m.name, m.pid);
-        } else {
-            eprintln!("{}: started (PID {})", m.name, m.pid);
+    // Bridge auto-start (before launching sessions)
+    if !no_bridge && member_filter.is_none() && team.bridge_lifecycle.start_on_up {
+        if let Some(outcome) =
+            formation::auto_start_bridge(&team_repo, &team.name, &cfg.workzone)
+        {
+            display_bridge_outcome(&outcome);
         }
     }
-    for m in &result.errors {
-        eprintln!("{}: {}", m.name, m.error);
+
+    // Determine which members to start sessions for
+    let members: Vec<String> = if let Some(m) = member_filter {
+        vec![m.to_string()]
+    } else {
+        profile::discover_member_dirs(&team_repo)
+    };
+
+    if members.is_empty() {
+        println!("No members hired yet. Run `bm hire <role>` to hire a member.");
+        return Ok(());
+    }
+
+    // Collect members that already have an active session (to skip them)
+    let active_members: Vec<String> = client
+        .list_sessions()
+        .ok()
+        .map(|r| {
+            r.sessions
+                .into_iter()
+                .filter(|s| s.current_state == "Creating" || s.current_state == "Active")
+                .map(|s| s.member_name)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut launched = 0usize;
+    let mut skipped = 0usize;
+    let mut errors: Vec<String> = Vec::new();
+
+    for member in &members {
+        if active_members.contains(member) {
+            eprintln!("{}: already running", member);
+            skipped += 1;
+            continue;
+        }
+
+        let req = StartSessionRequest {
+            member_name: member.clone(),
+            session_type: "Loop".to_string(),
+            work_item_id: None,
+        };
+        match client.start_session(&req) {
+            Ok(resp) if resp.ok => {
+                let session_id = resp.session_id.as_deref().unwrap_or("unknown");
+                if let Some(ws) = &resp.workspace_path {
+                    eprintln!(
+                        "{}: started (session {}, workspace: {})",
+                        member, session_id, ws
+                    );
+                } else {
+                    eprintln!("{}: started (session {})", member, session_id);
+                }
+                launched += 1;
+            }
+            Ok(resp) => {
+                let err_msg = resp.error.as_deref().unwrap_or("unknown error");
+                eprintln!("{}: {}", member, err_msg);
+                errors.push(format!("{}: {}", member, err_msg));
+            }
+            Err(e) => {
+                eprintln!("{}: {}", member, e);
+                errors.push(format!("{}: {}", member, e));
+            }
+        }
     }
 
     println!(
         "\nStarted {} member(s), skipped {} (already running), {} error(s).",
-        result.launched.len(),
-        result.skipped.len(),
-        result.errors.len()
+        launched,
+        skipped,
+        errors.len()
     );
 
-    if !result.errors.is_empty() {
+    if !errors.is_empty() {
         bail!("Some members failed to start. See errors above.");
     }
 
@@ -264,8 +317,8 @@ mod tests {
         use crate::formation;
         use anyhow::Result;
 
-        let _: fn(&std::path::Path, Option<&str>, Option<&str>, Option<&str>, Option<&std::path::Path>) -> Result<u32> =
-            formation::launch_ralph;
+        type LaunchRalphFn = fn(&std::path::Path, Option<&str>, Option<&str>, Option<&str>, Option<&std::path::Path>) -> Result<u32>;
+        let _: LaunchRalphFn = formation::launch_ralph;
     }
 
     #[test]

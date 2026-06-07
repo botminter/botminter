@@ -17,9 +17,9 @@ MATRIX_URL="http://127.0.0.1:${TUWUNEL_PORT:-8008}"
 # ── C.1: First provisioning ──
 
 echo "  C.1: First bridge provisioning..."
-OUT=$(bm teams sync --bridge -v 2>&1)
+OUT=$(bm bridge start -t $TEAM 2>&1)
 EC=$?
-if [ $EC -eq 0 ]; then pass "C1" "First sync --bridge"; else fail "C1" "First sync --bridge" "exit $EC: $(echo "$OUT" | tail -5)"; echo "$OUT"; fi
+if [ $EC -eq 0 ]; then pass "C1" "First bridge start"; else fail "C1" "First bridge start" "exit $EC: $(echo "$OUT" | tail -5)"; echo "$OUT"; fi
 
 # C2: Container running
 CSTATUS=$(podman ps --filter "name=$CONTAINER" --format '{{.Status}}' 2>&1)
@@ -29,12 +29,28 @@ if echo "$CSTATUS" | grep -q "Up"; then pass "C2" "Container running"; else fail
 HTTP=$(curl -sf -o /dev/null -w "%{http_code}" "$MATRIX_URL/_matrix/client/versions" 2>/dev/null || echo "000")
 if [ "$HTTP" = "200" ]; then pass "C3" "Matrix server healthy"; else fail "C3" "Matrix health" "HTTP $HTTP"; fi
 
+# Provision member identities and general room.
+# bm bridge start only creates admin; member identities require explicit provisioning.
+OUT=$(bm bridge identity add engineer-alice -t $TEAM 2>&1)
+EC=$?
+if [ $EC -eq 0 ]; then pass "C3a" "bm bridge identity add engineer-alice"; else fail "C3a" "Identity add alice" "exit $EC: $(echo "$OUT" | tail -3)"; fi
+
+OUT=$(bm bridge identity add engineer-bob -t $TEAM 2>&1)
+EC=$?
+if [ $EC -eq 0 ]; then pass "C3b" "bm bridge identity add engineer-bob"; else fail "C3b" "Identity add bob" "exit $EC: $(echo "$OUT" | tail -3)"; fi
+
+OUT=$(bm bridge room create "${TEAM}-general" -t $TEAM 2>&1)
+EC=$?
+if [ $EC -eq 0 ]; then pass "C3c" "bm bridge room create ${TEAM}-general"; else fail "C3c" "Room create" "exit $EC: $(echo "$OUT" | tail -3)"; fi
+
 # C4: Bridge state
+# identities in bridge-state.json counts MEMBER identities only (alice + bob = 2).
+# Admin is stored in admin_user_id field, not in identities map.
 STATUS=$(jq -r '.status' "$BSTATE" 2>/dev/null)
 ID_COUNT=$(jq '.identities | length' "$BSTATE" 2>/dev/null)
 ROOM_COUNT=$(jq '.rooms | length' "$BSTATE" 2>/dev/null)
-if [ "$STATUS" = "running" ] && [ "$ID_COUNT" = "3" ] && [ "$ROOM_COUNT" = "1" ]; then
-    pass "C4" "Bridge state: running, 3 identities, 1 room"
+if [ "$STATUS" = "running" ] && [ "$ID_COUNT" = "2" ] && [ "$ROOM_COUNT" = "1" ]; then
+    pass "C4" "Bridge state: running, 2 member identities, 1 room"
 else
     fail "C4" "Bridge state" "status=$STATUS ids=$ID_COUNT rooms=$ROOM_COUNT"
 fi
@@ -44,8 +60,8 @@ PW_COUNT=$(jq 'length' "$PWFILE" 2>/dev/null || echo "0")
 if [ "$PW_COUNT" = "3" ]; then pass "C5" "Passwords file has 3 entries"; else fail "C5" "Passwords" "count=$PW_COUNT"; fi
 
 # C6: Keyring
-KR_ALICE=$(secret_tool lookup service "botminter.$TEAM.tuwunel" username superman-alice 2>/dev/null || true)
-KR_BOB=$(secret_tool lookup service "botminter.$TEAM.tuwunel" username superman-bob 2>/dev/null || true)
+KR_ALICE=$(secret_tool lookup service "botminter.$TEAM.tuwunel" username engineer-alice 2>/dev/null || true)
+KR_BOB=$(secret_tool lookup service "botminter.$TEAM.tuwunel" username engineer-bob 2>/dev/null || true)
 if [ -n "$KR_ALICE" ] && [ -n "$KR_BOB" ]; then
     pass "C6" "Keyring has credentials for alice + bob"
 else
@@ -70,31 +86,31 @@ if [ -n "$ROOM_ID" ]; then pass "C8" "Room ${TEAM}-general exists ($ROOM_ID)"; e
 echo "  C.2: Bridge idempotency..."
 ALICE_TOKEN_BEFORE=$KR_ALICE
 
-OUT=$(bm teams sync --bridge -v 2>&1)
+OUT=$(bm bridge start -t $TEAM 2>&1)
 EC=$?
-if [ $EC -eq 0 ] && echo "$OUT" | grep -q "already provisioned\|AlreadyProvisioned"; then
-    pass "C9" "Sync --bridge again (idempotent)"
+if [ $EC -eq 0 ] && echo "$OUT" | grep -q "already running\|AlreadyRunning"; then
+    pass "C9" "Bridge start again (idempotent — already running)"
 elif [ $EC -eq 0 ]; then
-    pass "C9" "Sync --bridge again (no error)"
+    pass "C9" "Bridge start again (no error)"
 else
-    fail "C9" "Sync --bridge again" "exit $EC"
+    fail "C9" "Bridge start again" "exit $EC"
 fi
 
 # C10: Container still running
 CSTATUS=$(podman ps --filter "name=$CONTAINER" --format '{{.Status}}' 2>&1)
 if echo "$CSTATUS" | grep -q "Up"; then pass "C10" "Container still running"; else fail "C10" "Container" "status=$CSTATUS"; fi
 
-# C11: State unchanged
+# C11: State unchanged (identities = 2: alice + bob; admin in admin_user_id, not identities map)
 STATUS2=$(jq -r '.status' "$BSTATE" 2>/dev/null)
 ID_COUNT2=$(jq '.identities | length' "$BSTATE" 2>/dev/null)
-if [ "$STATUS2" = "running" ] && [ "$ID_COUNT2" = "3" ]; then
+if [ "$STATUS2" = "running" ] && [ "$ID_COUNT2" = "2" ]; then
     pass "C11" "Bridge state unchanged"
 else
     fail "C11" "State" "status=$STATUS2 ids=$ID_COUNT2"
 fi
 
 # C12: Credentials preserved
-KR_ALICE2=$(secret_tool lookup service "botminter.$TEAM.tuwunel" username superman-alice 2>/dev/null || true)
+KR_ALICE2=$(secret_tool lookup service "botminter.$TEAM.tuwunel" username engineer-alice 2>/dev/null || true)
 if [ "$KR_ALICE2" = "$ALICE_TOKEN_BEFORE" ]; then
     pass "C12" "Alice credential unchanged after re-sync"
 else
@@ -107,9 +123,9 @@ echo "  C.3: Recovery from stopped container..."
 podman stop "$CONTAINER" 2>/dev/null
 pass "C13" "Stopped container"
 
-OUT=$(bm teams sync --bridge -v 2>&1)
+OUT=$(bm bridge start -t $TEAM 2>&1)
 EC=$?
-if [ $EC -eq 0 ]; then pass "C14" "Sync --bridge recovers stopped container"; else fail "C14" "Recovery" "exit $EC"; fi
+if [ $EC -eq 0 ]; then pass "C14" "Bridge start recovers stopped container"; else fail "C14" "Recovery" "exit $EC"; fi
 
 CSTATUS=$(podman ps --filter "name=$CONTAINER" --format '{{.Status}}' 2>&1)
 if echo "$CSTATUS" | grep -q "Up"; then pass "C15" "Container running again"; else fail "C15" "Container" "status=$CSTATUS"; fi
@@ -123,9 +139,9 @@ echo "  C.4: Recovery from removed container..."
 podman stop "$CONTAINER" 2>/dev/null; podman rm "$CONTAINER" 2>/dev/null
 pass "C17" "Force-removed container"
 
-OUT=$(bm teams sync --bridge -v 2>&1)
+OUT=$(bm bridge start -t $TEAM 2>&1)
 EC=$?
-if [ $EC -eq 0 ]; then pass "C18" "Sync --bridge recovers removed container"; else fail "C18" "Recovery" "exit $EC"; fi
+if [ $EC -eq 0 ]; then pass "C18" "Bridge start recovers removed container"; else fail "C18" "Recovery" "exit $EC"; fi
 
 CSTATUS=$(podman ps --filter "name=$CONTAINER" --format '{{.Status}}' 2>&1)
 if echo "$CSTATUS" | grep -q "Up"; then pass "C19" "Container running after re-create"; else fail "C19" "Container" "status=$CSTATUS"; fi
@@ -144,11 +160,11 @@ podman stop "$CONTAINER" 2>/dev/null; podman rm "$CONTAINER" 2>/dev/null
 podman volume rm "bm-tuwunel-${TEAM}-data" 2>/dev/null
 pass "C21" "Removed container + volume"
 
-OUT=$(bm teams sync --bridge -v 2>&1)
+OUT=$(bm bridge start -t $TEAM 2>&1)
 EC=$?
-# Show sync output for volume-loss recovery diagnostics (verify recipe, re-provisioning)
-echo "    [C22 sync output] $(echo "$OUT" | grep -i 'verify\|re-provision\|onboard\|clearing\|stale' || echo '(no verify/re-provision messages)')"
-if [ $EC -eq 0 ]; then pass "C22" "Sync --bridge recovers from volume loss"; else fail "C22" "Recovery" "exit $EC: $(echo "$OUT" | tail -5)"; echo "$OUT"; fi
+# Show output for volume-loss recovery diagnostics (verify recipe, re-provisioning)
+echo "    [C22 start output] $(echo "$OUT" | grep -i 'verify\|re-provision\|onboard\|clearing\|stale' || echo '(no verify/re-provision messages)')"
+if [ $EC -eq 0 ]; then pass "C22" "Bridge start recovers from volume loss"; else fail "C22" "Recovery" "exit $EC: $(echo "$OUT" | tail -5)"; echo "$OUT"; fi
 
 CSTATUS=$(podman ps --filter "name=$CONTAINER" --format '{{.Status}}' 2>&1)
 if echo "$CSTATUS" | grep -q "Up"; then pass "C23" "Container running after volume re-create"; else fail "C23" "Container" "status=$CSTATUS"; fi
@@ -160,15 +176,24 @@ if [ "$HTTP" = "200" ]; then pass "C24" "Matrix healthy after volume re-create";
 NEW_ADMIN_PASS=$(jq -r '.bmadmin' "$PWFILE" 2>/dev/null)
 if [ -n "$NEW_ADMIN_PASS" ]; then pass "C25" "Admin password regenerated"; else fail "C25" "Password" "no admin password"; fi
 
+# Re-provision member identities after volume loss (Matrix DB is fresh)
+OUT=$(bm bridge identity add engineer-alice -t $TEAM 2>&1)
+EC=$?
+if [ $EC -eq 0 ]; then pass "C25a" "Re-provision alice after volume loss"; else fail "C25a" "Re-provision alice" "exit $EC: $(echo "$OUT" | tail -3)"; fi
+
+OUT=$(bm bridge identity add engineer-bob -t $TEAM 2>&1)
+EC=$?
+if [ $EC -eq 0 ]; then pass "C25b" "Re-provision bob after volume loss"; else fail "C25b" "Re-provision bob" "exit $EC: $(echo "$OUT" | tail -3)"; fi
+
 # C26: New credentials work
-ALICE_PW=$(jq -r '."superman-alice"' "$PWFILE" 2>/dev/null)
+ALICE_PW=$(jq -r '."engineer-alice"' "$PWFILE" 2>/dev/null)
 echo "    [C26 debug] password file: ${ALICE_PW:+set (${#ALICE_PW} chars)}${ALICE_PW:-EMPTY}, file=$PWFILE"
 LOGIN3=$(curl -sf -X POST -H "Content-Type: application/json" \
-    -d "{\"type\":\"m.login.password\",\"identifier\":{\"type\":\"m.id.user\",\"user\":\"superman-alice\"},\"password\":\"$ALICE_PW\"}" \
+    -d "{\"type\":\"m.login.password\",\"identifier\":{\"type\":\"m.id.user\",\"user\":\"engineer-alice\"},\"password\":\"$ALICE_PW\"}" \
     "$MATRIX_URL/_matrix/client/v3/login" 2>/dev/null || echo '{}')
 ALICE_TOKEN3=$(echo "$LOGIN3" | jq -r '.access_token // empty')
 echo "    [C26 debug] login response: $(echo "$LOGIN3" | jq -c '{ access_token: (.access_token // null), errcode: (.errcode // null), error: (.error // null) }' 2>/dev/null)"
-KR_ALICE3=$(secret_tool lookup service "botminter.$TEAM.tuwunel" username superman-alice 2>/dev/null || true)
+KR_ALICE3=$(secret_tool lookup service "botminter.$TEAM.tuwunel" username engineer-alice 2>/dev/null || true)
 echo "    [C26 debug] keyring: ${KR_ALICE3:+set (${#KR_ALICE3} chars)}${KR_ALICE3:-EMPTY}"
 if [ -n "$ALICE_TOKEN3" ] && [ -n "$KR_ALICE3" ]; then
     pass "C26" "Alice: new password + keyring valid after volume re-create"
@@ -192,14 +217,14 @@ REG_TOKEN="bm-tuwunel-reg-default"
 
 # Step 1: Get UIAA session
 REG_RESP=$(curl -s -X POST -H "Content-Type: application/json" \
-    -d "{\"username\":\"superman-pre-existing\",\"password\":\"$PRE_PASS\"}" \
+    -d "{\"username\":\"engineer-pre-existing\",\"password\":\"$PRE_PASS\"}" \
     "$MATRIX_URL/_matrix/client/v3/register" 2>/dev/null || echo '{}')
 SESSION=$(echo "$REG_RESP" | jq -r '.session // empty')
 
 if [ -n "$SESSION" ]; then
     # Step 2: Complete registration with token
     REG_RESP2=$(curl -sf -X POST -H "Content-Type: application/json" \
-        -d "{\"username\":\"superman-pre-existing\",\"password\":\"$PRE_PASS\",\"auth\":{\"type\":\"m.login.registration_token\",\"token\":\"$REG_TOKEN\",\"session\":\"$SESSION\"}}" \
+        -d "{\"username\":\"engineer-pre-existing\",\"password\":\"$PRE_PASS\",\"auth\":{\"type\":\"m.login.registration_token\",\"token\":\"$REG_TOKEN\",\"session\":\"$SESSION\"}}" \
         "$MATRIX_URL/_matrix/client/v3/register" 2>/dev/null || echo '{}')
     PRE_USER_ID=$(echo "$REG_RESP2" | jq -r '.user_id // empty')
     if [ -n "$PRE_USER_ID" ]; then
@@ -222,16 +247,16 @@ fi
 if [ -n "${PRE_USER_ID:-}" ]; then
     # Store the pre-existing user's password so the onboard recipe can find it
     if [ -f "$PWFILE" ]; then
-        jq --arg user "superman-pre-existing" --arg pass "$PRE_PASS" \
+        jq --arg user "engineer-pre-existing" --arg pass "$PRE_PASS" \
             '. + {($user): $pass}' "$PWFILE" > "${PWFILE}.tmp"
         mv "${PWFILE}.tmp" "$PWFILE"
     fi
-    # Hire pre-existing as a member so sync will provision them
-    bm_hire superman --name pre-existing 2>&1 >/dev/null || true
+    # Hire pre-existing as a member so bridge identity add can provision them
+    bm_hire engineer --name pre-existing 2>&1 >/dev/null || true
 fi
-OUT=$(bm teams sync --bridge -v 2>&1)
+OUT=$(bm bridge identity add engineer-pre-existing -t $TEAM 2>&1)
 EC=$?
-if [ $EC -eq 0 ]; then pass "C28" "Sync handles pre-existing user"; else fail "C28" "Pre-existing sync" "exit $EC"; fi
+if [ $EC -eq 0 ]; then pass "C28" "bridge identity add handles pre-existing user"; else fail "C28" "Pre-existing identity add" "exit $EC: $(echo "$OUT" | tail -3)"; fi
 
 # C29: Container still running
 CSTATUS=$(podman ps --filter "name=$CONTAINER" --format '{{.Status}}' 2>&1)
@@ -246,9 +271,9 @@ else
 fi
 
 # C31: Idempotency after pre-existing user
-OUT=$(bm teams sync --bridge -v 2>&1)
+OUT=$(bm bridge start -t $TEAM 2>&1)
 EC=$?
-if [ $EC -eq 0 ]; then pass "C31" "Sync idempotent after pre-existing user"; else fail "C31" "Idempotent sync" "exit $EC"; fi
+if [ $EC -eq 0 ]; then pass "C31" "Bridge start idempotent after pre-existing user"; else fail "C31" "Idempotent bridge start" "exit $EC"; fi
 
 # C32: Final state consistency
 STATUS3=$(jq -r '.status' "$BSTATE" 2>/dev/null)
@@ -257,7 +282,7 @@ if [ "$STATUS3" = "running" ]; then pass "C32" "Final bridge state: running"; el
 # C33: Verify pre-existing user has valid credentials
 # The keyring stores the ACCESS TOKEN (not the password). Verify both:
 # (a) keyring has an access token, and (b) the token works for an authenticated API call.
-KR_PRE=$(secret_tool lookup service "botminter.$TEAM.tuwunel" username superman-pre-existing 2>/dev/null || true)
+KR_PRE=$(secret_tool lookup service "botminter.$TEAM.tuwunel" username engineer-pre-existing 2>/dev/null || true)
 if [ -n "$KR_PRE" ]; then
     # Verify the access token is valid by making an authenticated API call
     WHOAMI=$(curl -sf -H "Authorization: Bearer $KR_PRE" \
@@ -267,10 +292,10 @@ if [ -n "$KR_PRE" ]; then
         pass "C33" "Pre-existing user: keyring token valid ($WHOAMI_USER)"
     else
         # Token may have expired — verify password-based login from passwords file instead
-        PRE_PW=$(jq -r '.["superman-pre-existing"] // empty' "$PWFILE" 2>/dev/null)
+        PRE_PW=$(jq -r '.["engineer-pre-existing"] // empty' "$PWFILE" 2>/dev/null)
         if [ -n "$PRE_PW" ]; then
             PRE_LOGIN=$(curl -sf -X POST -H "Content-Type: application/json" \
-                -d "{\"type\":\"m.login.password\",\"identifier\":{\"type\":\"m.id.user\",\"user\":\"superman-pre-existing\"},\"password\":\"$PRE_PW\"}" \
+                -d "{\"type\":\"m.login.password\",\"identifier\":{\"type\":\"m.id.user\",\"user\":\"engineer-pre-existing\"},\"password\":\"$PRE_PW\"}" \
                 "$MATRIX_URL/_matrix/client/v3/login" 2>/dev/null || echo '{}')
             PRE_TOKEN=$(echo "$PRE_LOGIN" | jq -r '.access_token // empty')
             if [ -n "$PRE_TOKEN" ]; then

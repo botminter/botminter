@@ -573,6 +573,7 @@ projects:
                 },
                 Command::External(_) => {}
                 Command::Completions { .. } => {}
+                Command::Session { .. } => {}
             }
         }
 
