@@ -1,3 +1,6 @@
+> [!WARNING]
+> **What's next:** The current version was the experiment - it validated the thesis. Now BotMinter is generalizing into something bigger. The next version will look fundamentally different. [Follow along](https://github.com/botminter/botminter/discussions/6).
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme-banner-dark.png">
@@ -9,9 +12,6 @@
 Running one coding agent is easy. Running a team of them is challenging.
 
 BotMinter is a CLI that brings conventions to running a team of coding agents. Your process, knowledge, and constraints live in a Git repo, and every agent picks them up automatically. Built for Claude Code today, with architecture to support Gemini CLI, Codex, and more.
-
-> [!NOTE]
-> **What's next:** The current version was the experiment - it validated the thesis. Now BotMinter is generalizing into something bigger. The next version will look fundamentally different. [Follow along](https://github.com/botminter/botminter/discussions/6).
 
 ## The Problem
 
