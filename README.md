@@ -10,8 +10,8 @@ Running one coding agent is easy. Running a team of them is challenging.
 
 BotMinter is a CLI that brings conventions to running a team of coding agents. Your process, knowledge, and constraints live in a Git repo, and every agent picks them up automatically. Built for Claude Code today, with architecture to support Gemini CLI, Codex, and more.
 
-> [!WARNING]
-> **Pre-Alpha** - BotMinter is under active development and not yet ready for production use. Commands, configuration format, and behavior may change without notice between releases. See the [Roadmap](docs/content/roadmap.md) for current status.
+> [!NOTE]
+> **What's next:** The current version was the experiment - it validated the thesis. Now BotMinter is generalizing into something bigger. The next version will look fundamentally different. [Follow along](https://github.com/botminter/botminter/discussions/6).
 
 ## The Problem
 
